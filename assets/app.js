@@ -20,7 +20,7 @@
   };
   const PLATFORM = { fb: 'Facebook', ig: 'Instagram', manual: 'Вручную' };
   const COLS = ['leads', 'crm', 'meta'];
-  const S = { leads: {}, crm: {}, meta: {}, tab: 'all', col: 'new', q: '', open: null, sync: {}, seen: null };
+  const S = { leads: {}, crm: {}, meta: {}, tab: 'all', col: 'new', q: '', open: null, sync: {} };
   const sources = () => (S.meta.sources && S.meta.sources.list) || [];
   const sourceOf = (id) => sources().find((s) => s.id === id);
   let store = null, mcp = null, stops = [], watched = '', dragId = null;
@@ -51,6 +51,7 @@
   // mode: wait — открываем, login — почта и пароль, retry — только «Повторить»
   function showGate(mode, text) {
     const gate = $('#gate');
+    gate.getAnimations().forEach((x) => x.cancel());
     gate.hidden = false;
     $('#gate-msg').textContent = text;
     gate.querySelectorAll('.gate-in').forEach((x) => { x.hidden = mode !== 'login'; });
@@ -160,7 +161,8 @@
     const noLink = (text) => { S.sync.link = { err: text }; renderSync(); };
     const retryPull = () => (busy ||= pull().catch((e) => noLink(e.message === 'нет связи' ? 'Нет связи с базой' : e.message)).finally(() => { busy = null; }));
     for (;;) { try { await pull(); break; } catch { await askGate(sb, 'retry', OFFLINE); } }
-    $('#gate').hidden = true;
+    const bye = play($('#gate'), { opacity: [1, 0] }, 240);
+    if (bye) bye.onfinish = () => { $('#gate').hidden = true; }; else $('#gate').hidden = true;
     started = true;
     sb.channel('crm-l').on('postgres_changes', { event: '*', schema: 'public', table: 'crm_docs' }, (p) => { if (p.new && p.new.id) show([p.new]); })
       .subscribe((st) => { if (st === 'SUBSCRIBED') retryPull(); });
@@ -335,7 +337,7 @@
     const work = pullAll().finally(() => { busy = false; renderSync(); });
     // крутим целыми оборотами: загрузка кончилась раньше — оборот всё равно доходит до конца. Таймер — для скрытой вкладки, там кадров нет
     do {
-      if (matchMedia('(prefers-reduced-motion: reduce)').matches) break;
+      if (still.matches) break;
       const turn = $('.mark svg', el).animate({ transform: ['rotate(0deg)', 'rotate(360deg)'] }, { duration: 900, easing: 'cubic-bezier(.45, .05, .55, .95)' });
       await Promise.race([turn.finished, new Promise((ok) => setTimeout(ok, 1400))]);
     } while (busy);
@@ -357,6 +359,61 @@
       try { await onPull(src, await mcp.callTool(DRIVE, 'download_file_content', driveArgs(src), { cache: { refresh: true } })); } catch (e) { S.sync[src.id] = { ...S.sync[src.id], err: mcpText(e) }; }
     }));
     return Object.keys(S.leads).length - before;
+  }
+
+  /* ---------- Плавность ---------- */
+  const still = matchMedia('(prefers-reduced-motion: reduce)');
+  const play = (el, frames, ms = 260) => (still.matches || !el.animate ? null : el.animate(frames, { duration: ms, easing: 'cubic-bezier(.22, 1, .36, 1)' }));
+  // Обновляем разметку на месте, а не целиком: те же элементы остаются собой, поэтому переходы CSS доигрывают, а фокус, набранный текст и прокрутка не сбиваются
+  const keyOf = (n) => (n.nodeType !== 1 ? '' : n.id || n.dataset.k || (n.dataset.act || n.dataset.id ? `${n.dataset.act || ''}:${n.dataset.id || ''}` : ''));
+  function sync(a, b) {
+    const free = new Set(a.childNodes);
+    let at = a.firstChild;
+    for (const n of [...b.childNodes]) {
+      let o = null;
+      for (const x of free) if (x.nodeName === n.nodeName && keyOf(x) === keyOf(n)) { o = x; break; }
+      free.delete(o);
+      if (o && o.nodeType === 1) {
+        for (const { name, value } of n.attributes) if (o.getAttribute(name) !== value) o.setAttribute(name, value);
+        for (const { name } of [...o.attributes]) if (!n.hasAttribute(name)) o.removeAttribute(name);
+        if (n.nodeName === 'INPUT' && o !== document.activeElement && o.value !== n.value) o.value = n.value;
+        if (n.nodeName !== 'TEXTAREA') sync(o, n);
+      } else if (o && o.data !== n.data) o.data = n.data;
+      if ((o || n) === at) at = at.nextSibling; else a.insertBefore(o || n, at);
+    }
+    for (const x of free) x.remove();
+  }
+  function morph(el, html) {
+    if (el.lastHtml === html) return;
+    el.lastHtml = html;
+    const t = document.createElement('template');
+    t.innerHTML = html;
+    sync(el, t.content);
+  }
+  // Окно сначала рисуется за краем, движение начинается через два кадра: иначе Safari теряет начало, пока рисует. Таймер — для скрытой вкладки.
+  // Закрывается после анимации; открыли раньше — она разворачивается обратно
+  function raise(d) {
+    const turn = d.turn = (d.turn || 0) + 1, go = () => { if (d.turn === turn) d.classList.remove('closing', 'pre'); };
+    if (d.open) { go(); return; }
+    d.classList.add('closing', 'pre');
+    d.showModal();
+    requestAnimationFrame(() => requestAnimationFrame(go));
+    setTimeout(go, 120);
+  }
+  function shut(d) {
+    if (!d.open || d.classList.contains('closing')) return;
+    if (d.contains(document.activeElement)) document.activeElement.blur(); // недописанное поле успевает сохраниться
+    if (d.id === 'drawer') S.open = null; // чтобы обновление данных не открыло карточку обратно
+    d.classList.add('closing');
+    const turn = d.turn = (d.turn || 0) + 1;
+    // таймер — для скрытой вкладки, там анимации не заканчиваются
+    Promise.race([Promise.allSettled(d.getAnimations().map((x) => x.finished)), new Promise((ok) => setTimeout(ok, 500))]).then(() => { if (d.turn === turn) { d.close(); d.classList.remove('closing', 'pre'); } });
+  }
+  // высота окна меняется плавно, а не скачком
+  function grow(change) {
+    const m = $('#modal'), h = m.offsetHeight;
+    change();
+    if (m.open && h && h !== m.offsetHeight) play(m, { height: [`${h}px`, `${m.offsetHeight}px`] });
   }
 
   /* ---------- Данные для экрана ---------- */
@@ -420,7 +477,7 @@
     const meta = [S.tab === 'all' && src ? src.name : '', { fb: 'FB', ig: 'IG' }[lead.platform] || PLATFORM[lead.platform], when(lead.created)].filter(Boolean).join(', ');
     const note = v.log.length ? v.log[0].text : lead.note;
     const due = c.next ? dueInfo(c.next) : null;
-    return `<article class="card${S.seen && !S.seen.has(v.id) ? ' is-enter' : ''}" draggable="true" data-id="${esc(v.id)}">
+    return `<article class="card" draggable="true" data-id="${esc(v.id)}">
   <p class="card-meta"><span>${esc(meta)}</span>${age}</p>
   <div class="card-top"><button class="card-open" type="button" data-act="open" data-id="${esc(v.id)}">${esc(v.name)}</button>${v.amount && status !== 'lost' ? `<span class="card-sum">${money(v.amount)}</span>` : ''}</div>
   ${need(d)}
@@ -437,17 +494,36 @@
     };
     const cur = count(S.tab), by = (p) => cur.filter((v) => v.lead.platform === p).length;
     const today = cur.filter((v) => born(v) && dayNo(v.lead.created) === dayNo(new Date())).length;
-    $('#lines').innerHTML = tab('all', 'Все', 'все направления', ICON.all)
+    morph($('#lines'), tab('all', 'Все', 'все направления', ICON.all)
       + sources().map((s) => tab(s.id, s.name, s.brand || 'таблица Google', ICON[s.icon] || ICON.other)).join('')
       + '<button class="line-tab add" type="button" data-act="settings">Добавить таблицу</button>'
-      + `<span class="line-sum">Всего ${cur.length}, Facebook ${by('fb')}, Instagram ${by('ig')}, сегодня ${today}</span>`;
+      + `<span class="line-sum">Всего ${cur.length}, Facebook ${by('fb')}, Instagram ${by('ig')}, сегодня ${today}</span>`);
   }
   function renderAgenda() {
     const list = Object.keys(S.crm).map(view).filter((v) => v && v.c.next && v.status !== 'lost').sort((a, b) => Date.parse(a.c.next) - Date.parse(b.c.next)).slice(0, 20);
-    $('#agenda').innerHTML = list.length ? '<b>Перезвонить</b>' + list.map((v) => {
+    morph($('#agenda'), list.length ? '<b>Перезвонить</b>' + list.map((v) => {
       const due = dueInfo(v.c.next);
       return `<button class="task ${due.cls}" type="button" data-act="open" data-id="${esc(v.id)}"><time>${esc(when(v.c.next))}</time><span>${esc(v.name)}</span></button>`;
-    }).join('') : '';
+    }).join('') : '');
+  }
+  // где карточки были до обновления: потом они доезжают на новые места, а не перескакивают
+  let shown = null;
+  const snap = () => new Map(still.matches ? [] : [...document.querySelectorAll('#board .card')].map((x) => [x.dataset.id, [x.getBoundingClientRect(), x.parentNode]]));
+  function moveCards(was) {
+    const now = { tab: S.tab, col: S.col, q: S.q }, old = shown, at = (k) => STATUSES.findIndex((x) => x[0] === k);
+    shown = now;
+    if (!old || old.q !== now.q) return; // первый показ и набор в поиске — сразу
+    if (old.tab !== now.tab || old.col !== now.col) {
+      const from = old.col !== now.col ? `translateX(${at(now.col) > at(old.col) ? 28 : -28}px)` : 'translateY(10px)';
+      for (const x of document.querySelectorAll('#board .col-list')) play(x, { opacity: [0, 1], transform: [from, 'none'] }, 240);
+      return;
+    }
+    for (const x of document.querySelectorAll('#board .card')) {
+      const r = x.getBoundingClientRect(), [o, parent] = was.get(x.dataset.id) || [];
+      if (!r.width || r.bottom < 0 || r.top > innerHeight) continue;
+      if (!o || !o.width || parent !== x.parentNode) play(x, { opacity: [0, 1], transform: ['scale(.96)', 'none'] }, 280);
+      else if (Math.abs(o.top - r.top) > 1 || Math.abs(o.left - r.left) > 1) play(x, { transform: [`translate(${o.left - r.left}px, ${o.top - r.top}px)`, 'none'] }, 320);
+    }
   }
   function renderBoard() {
     const list = views();
@@ -462,10 +538,9 @@
       col.classList.toggle('is-cur', S.col === k);
       $('.col-head span', col).textContent = mine.length;
       $('.col-head em', col).textContent = sum ? money(sum) : '';
-      $('.col-list', col).innerHTML = mine.map(cardHTML).join('');
+      morph($('.col-list', col), mine.map(cardHTML).join(''));
     }
-    $('#tabs').innerHTML = STATUSES.map(([k, label]) => `<button type="button" data-act="col" data-id="${k}" class="${S.col === k ? 'on' : ''}" aria-pressed="${S.col === k}">${label} <span>${list.filter((v) => v.status === k).length}</span></button>`).join('');
-    S.seen = new Set(Object.keys(S.leads));
+    morph($('#tabs'), STATUSES.map(([k, label]) => `<button type="button" data-act="col" data-id="${k}" class="${S.col === k ? 'on' : ''}" aria-pressed="${S.col === k}">${label} <span>${list.filter((v) => v.status === k).length}</span></button>`).join(''));
   }
   function renderSync() {
     if (store && store.remote) {
@@ -486,7 +561,7 @@
     $('span', el).textContent = text;
     el.title = text + '. Нажмите, чтобы обновить';
     el.setAttribute('aria-label', 'Обновить заявки. ' + text);
-    if ($('#modal').open && $('#modal .src')) $('#modal .src').innerHTML = sourceRows();
+    if ($('#modal').open && $('#modal .src') && !$('#modal .src [data-sure]')) morph($('#modal .src'), sourceRows()); // пока ждём «Точно отключить?», не сбиваем
   }
   let queued = false;
   function refresh() {
@@ -500,7 +575,8 @@
       const all = Object.keys(S.leads).map(view);
       const fresh = all.filter((v) => v.status === 'new').length;
       document.title = fresh ? `(${fresh}) CRM L` : 'CRM L';
-      renderLines(all); renderAgenda(); renderBoard(); renderDrawer(); watchSheets(); if (store && store.remote) renderSync();
+      const was = snap();
+      renderLines(all); renderAgenda(); renderBoard(); moveCards(was); renderDrawer(); watchSheets(); if (store && store.remote) renderSync();
     }, 16);
   }
 
@@ -515,50 +591,48 @@
   function renderDrawer() {
     const box = $('#drawer');
     const v = S.open && view(S.open);
-    if (!v) { if (box.open) box.close(); return; }
-    const ae = document.activeElement;
-    const keep = drawn === v.id && box.contains(ae) && ae.id ? { id: ae.id, val: ae.value, at: ae.selectionStart } : null;
-    const draft = drawn === v.id && $('#d-note') ? $('#d-note').value : '';
-    const top = drawn === v.id && $('.d-scroll', box) ? $('.d-scroll', box).scrollTop : 0;
+    if (!v) { shut(box); return; }
+    const fresh = drawn !== v.id, hadLost = !!$('.lost-box', box);
     drawn = v.id;
     const { lead, c, d } = v;
     const src = sourceOf(lead.source);
     const twins = Object.keys(S.leads).filter((id) => id !== v.id && phoneDigits(lead.phone) && phoneDigits(S.leads[id].phone) === phoneDigits(lead.phone)).map(view);
     const lostOpen = v.status === 'lost' || asking === v.id;
     const facts = [['Направление', src && src.name], ['Откуда', PLATFORM[lead.platform]], ['Пришла', lead.created && `${fmtDay.format(new Date(lead.created))}, ${fmtTime.format(new Date(lead.created))}`], ['Кампания', lead.campaign], ['Объявление', lead.ad], ['Форма', lead.form], ['Ответ в форме', lead.answer]].filter((f) => f[1]);
-    box.innerHTML = `<div class="d-head"><input id="d-name" value="${esc(v.name)}" aria-label="Имя клиента" autocomplete="off"><button class="icon-btn" type="button" data-act="close" aria-label="Закрыть" autofocus>${ICON.close}</button></div>
-<div class="seg" role="group" aria-label="Статус">${STATUSES.map(([k, l]) => `<button type="button" class="s-${k}${v.status === k ? ' on' : ''}" data-act="status" data-id="${k}" aria-pressed="${v.status === k}">${l}</button>`).join('')}</div>
+    const html = `<div class="d-head"><input id="d-name" value="${esc(v.name)}" aria-label="Имя клиента" autocomplete="off"><button class="icon-btn" type="button" data-act="close" aria-label="Закрыть" autofocus>${ICON.close}</button></div>
+<div class="seg s-${v.status}" role="group" aria-label="Статус" style="--i:${STATUSES.findIndex((x) => x[0] === v.status)}">${STATUSES.map(([k, l]) => `<button type="button" class="s-${k}${v.status === k ? ' on' : ''}" data-act="status" data-id="${k}" aria-pressed="${v.status === k}">${l}</button>`).join('')}</div>
 <div class="d-scroll">
-  ${lostOpen ? `<div class="lost-box"><b>Почему в минус?</b><div class="chips">${REASONS.map((r) => `<button type="button" class="${c.lost_reason === r && v.status === 'lost' ? 'on' : ''}" data-act="reason" data-id="${esc(r)}">${esc(r)}</button>`).join('')}</div><form class="own" data-form="reason"><input id="d-reason" name="reason" maxlength="80" autocomplete="off" placeholder="Своя причина" aria-label="Своя причина" value="${esc(v.status === 'lost' && c.lost_reason && !REASONS.includes(c.lost_reason) ? c.lost_reason : '')}"><button class="btn">В минус</button></form></div>` : ''}
-  <section class="sec"><p class="phone">${esc(fmtPhone(lead.phone) || 'Телефона нет')}</p><div class="go">${wayLinks(lead.phone, true)}${phoneDigits(lead.phone) ? `<button class="btn quiet" type="button" data-act="copy" data-copy="+${phoneDigits(lead.phone)}">Скопировать номер</button>` : ''}</div>
+  ${lostOpen ? `<div class="lost-box" data-k="lost"><b>Почему в минус?</b><div class="chips">${REASONS.map((r) => `<button type="button" class="${c.lost_reason === r && v.status === 'lost' ? 'on' : ''}" data-act="reason" data-id="${esc(r)}">${esc(r)}</button>`).join('')}</div><form class="own" data-form="reason"><input id="d-reason" name="reason" maxlength="80" autocomplete="off" placeholder="Своя причина" aria-label="Своя причина" value="${esc(v.status === 'lost' && c.lost_reason && !REASONS.includes(c.lost_reason) ? c.lost_reason : '')}"><button class="btn">В минус</button></form></div>` : ''}
+  <section class="sec" data-k="phone"><p class="phone">${esc(fmtPhone(lead.phone) || 'Телефона нет')}</p><div class="go">${wayLinks(lead.phone, true)}${phoneDigits(lead.phone) ? `<button class="btn quiet" type="button" data-act="copy" data-copy="+${phoneDigits(lead.phone)}">Скопировать номер</button>` : ''}</div>
   ${twins.map((t) => `<p class="warn">Этот номер уже есть: <button class="btn small" type="button" data-act="open" data-id="${esc(t.id)}">${esc(t.name)}, ${esc((sourceOf(t.lead.source) || {}).name || '')}</button></p>`).join('')}</section>
-  <section class="sec"><h3>Чем закончился контакт</h3><div class="outs">${Object.entries(OUTCOMES).map(([k, o]) => `<button class="btn" type="button" data-act="out" data-id="${k}">${o.label}</button>`).join('')}<button class="btn" type="button" data-act="ask">Отказ</button></div></section>
-  <section class="sec"><h3>Что нужно</h3>${need(d)}${d.warn ? `<p class="warn">${esc(d.warn)}</p>` : ''}
+  <section class="sec" data-k="outs"><h3>Чем закончился контакт</h3><div class="outs">${Object.entries(OUTCOMES).map(([k, o]) => `<button class="btn" type="button" data-act="out" data-id="${k}">${o.label}</button>`).join('')}<button class="btn" type="button" data-act="ask">Отказ</button></div></section>
+  <section class="sec" data-k="need"><h3>Что нужно</h3>${need(d)}${d.warn ? `<p class="warn">${esc(d.warn)}</p>` : ''}
   ${d.models.length ? `<ul class="models">${d.models.map((m) => `<li><b>${esc(m.name)}</b><span class="p">${money(m.price)}</span><small>${esc(m.info)}</small><a href="${m.url}" target="_blank" rel="noopener noreferrer">Rozetka</a></li>`).join('')}</ul><p class="hint">Цены и наличие на ${PRICE_DATE}</p>` : ''}
   ${lead.note ? `<p class="quote">${esc(lead.note)}<br><span class="hint">пометка в таблице Google</span></p>` : ''}</section>
-  <section class="sec"><div class="row2"><label class="f"><span>Сумма сделки, ₴</span><input id="d-amount" inputmode="numeric" autocomplete="off" value="${v.amount == null ? '' : v.amount}"></label><div class="f"><span>Следующий звонок</span><button class="pick ${c.next ? dueInfo(c.next).cls : 'is-empty'}" id="d-next" type="button" data-act="cal">${c.next ? `${dueInfo(c.next).cls === 'is-overdue' ? 'Просрочен: ' : ''}${fmtLong.format(new Date(c.next))}, ${fmtTime.format(new Date(c.next))}` : 'Выбрать день и время'}${ICON.cal}</button></div></div>
+  <section class="sec" data-k="deal"><div class="row2"><label class="f"><span>Сумма сделки, ₴</span><input id="d-amount" inputmode="numeric" autocomplete="off" value="${v.amount == null ? '' : v.amount}"></label><div class="f"><span>Следующий звонок</span><button class="pick ${c.next ? dueInfo(c.next).cls : 'is-empty'}" id="d-next" type="button" data-act="cal">${c.next ? `${dueInfo(c.next).cls === 'is-overdue' ? 'Просрочен: ' : ''}${fmtLong.format(new Date(c.next))}, ${fmtTime.format(new Date(c.next))}` : 'Выбрать день и время'}${ICON.cal}</button></div></div>
   <div class="chips">${[['2h', 'Через 2 часа'], ['1', 'Завтра 10:00'], ['3', 'Через 3 дня'], ['7', 'Через неделю']].map(([k, l]) => `<button type="button" data-act="next" data-id="${k}">${l}</button>`).join('')}${c.next ? '<button type="button" data-act="next" data-id="off">Убрать звонок</button>' : ''}</div></section>
-  <section class="sec"><label class="f"><span>О чём говорили</span><textarea id="d-note" placeholder="Что нужно, куда доставка, о чём договорились"></textarea></label><div class="foot"><button class="btn primary" type="button" data-act="note">Записать</button></div>
+  <section class="sec" data-k="talk"><label class="f"><span>О чём говорили</span><textarea id="d-note" placeholder="Что нужно, куда доставка, о чём договорились"></textarea></label><div class="foot"><button class="btn primary" type="button" data-act="note">Записать</button></div>
   ${v.log.length ? `<ul class="log">${v.log.map((x) => `<li><time>${esc([when(x.at), x.by].filter(Boolean).join(', '))}</time>${esc(x.text)}</li>`).join('')}</ul>` : ''}</section>
-  <section class="sec"><h3>Заявка</h3><dl class="d-src">${facts.map(([k, t]) => `<dt>${k}</dt><dd>${esc(t)}</dd>`).join('')}${src ? `<dt>Таблица</dt><dd><a href="https://docs.google.com/spreadsheets/d/${esc(src.sheet)}/edit" target="_blank" rel="noopener noreferrer">открыть в Google</a></dd>` : ''}</dl>${store && store.remote ? '<div><button class="btn" type="button" data-act="history">История изменений</button></div>' : ''}</section>
+  <section class="sec" data-k="src"><h3>Заявка</h3><dl class="d-src">${facts.map(([k, t]) => `<dt>${k}</dt><dd>${esc(t)}</dd>`).join('')}${src ? `<dt>Таблица</dt><dd><a href="https://docs.google.com/spreadsheets/d/${esc(src.sheet)}/edit" target="_blank" rel="noopener noreferrer">открыть в Google</a></dd>` : ''}</dl>${store && store.remote ? '<div><button class="btn" type="button" data-act="history">История изменений</button></div>' : ''}</section>
 </div>`;
-    $('#d-note').value = draft;
-    if (keep && $('#' + keep.id)) { const el = $('#' + keep.id); el.value = keep.val; el.focus(); try { el.setSelectionRange(keep.at, keep.at); } catch { /* не текстовое поле */ } }
-    if (!box.open) box.showModal();
-    $('.d-scroll', box).scrollTop = top;
+    if (fresh) { box.innerHTML = html; box.lastHtml = html; $('.d-scroll', box).scrollTop = 0; } else morph(box, html);
+    if (fresh && box.open) play($('.d-scroll', box), { opacity: [0, 1] }, 200); // из карточки в другую карточку
+    const lost = $('.lost-box', box);
+    if (lost && !hadLost && !fresh) play(lost, { height: ['0px', `${lost.offsetHeight}px`], paddingBlock: ['0px', '12px'], marginBottom: ['-20px', '0px'], opacity: [0, 1] }, 300);
+    raise(box);
   }
-  function openLead(id) { S.open = id; asking = null; if ($('#modal').open) $('#modal').close(); renderDrawer(); }
+  function openLead(id) { S.open = id; asking = null; shut($('#modal')); renderDrawer(); }
   const LABEL = Object.fromEntries(STATUSES);
   async function setStatus(id, status) {
     const v = view(id);
     if (!v || v.status === status) return;
-    if (status === 'lost') { S.open = id; asking = id; renderDrawer(); $('.d-scroll').scrollTop = 0; return; }
+    if (status === 'lost') { S.open = id; asking = id; renderDrawer(); $('.d-scroll').scrollTo({ top: 0, behavior: 'smooth' }); return; }
     asking = null;
     await save(id, { status, ...(status === 'client' ? { next: null } : {}) }, `Статус: ${LABEL[status]}`, true);
   }
 
   /* ---------- Окна ---------- */
-  const modal = (html) => { const m = $('#modal'); m.innerHTML = html; if (!m.open) m.showModal(); };
+  const modal = (html) => { const m = $('#modal'); grow(() => { m.innerHTML = html; }); raise(m); };
   function openNew() {
     if (!sources().length) { openSettings(); return; }
     modal(`<form data-form="new"><h2>Новая заявка</h2>
@@ -582,8 +656,7 @@
     drawCal();
   }
   function drawCal() {
-    const now = new Date(), { d, y, m } = cal, box = $('#cal'), ae = document.activeElement;
-    const keep = box.contains(ae) && ae.dataset.id;
+    const now = new Date(), { d, y, m } = cal, box = $('#cal');
     const has = (S.crm[cal.id] || {}).next;
     const btn = (id, text, on, off, more = '') => `<button type="button" data-act="cal" data-id="${id}" aria-pressed="${on}"${on ? ' class="on"' : ''}${off ? ' disabled' : ''}${more}>${text}</button>`;
     const day = (n) => {
@@ -595,16 +668,14 @@
     const plus = (list, x) => [...new Set([...list, x])].sort((a, b) => a - b);
     const hours = plus(Array.from({ length: 14 }, (_, i) => i + 8), d.getHours());
     const mins = plus([0, 15, 30, 45], d.getMinutes());
-    box.innerHTML = `<div class="cal-top"><h2>Следующий звонок</h2><button class="icon-btn" type="button" data-act="close" aria-label="Закрыть">${ICON.close}</button></div>
-<div class="cal-top cal-own"><h3>${fmtLong.format(d)}</h3><input id="cal-h" inputmode="numeric" maxlength="2" autocomplete="off" aria-label="Часы" value="${String(d.getHours()).padStart(2, '0')}"><b>:</b><input id="cal-m" inputmode="numeric" maxlength="2" autocomplete="off" aria-label="Минуты" value="${String(d.getMinutes()).padStart(2, '0')}"></div>
-<div class="cal-top"><button class="icon-btn" type="button" data-act="cal" data-id="m:-1" aria-label="Предыдущий месяц"${y * 12 + m <= now.getFullYear() * 12 + now.getMonth() ? ' disabled' : ''}>${ICON.prev}</button><b aria-live="polite">${fmtMonth.format(new Date(y, m, 1)).replace(/\s*г\.$/, '')}</b><button class="icon-btn" type="button" data-act="cal" data-id="m:1" aria-label="Следующий месяц">${ICON.next}</button></div>
+    morph(box, `<div class="cal-top"><h2>Следующий звонок</h2><button class="icon-btn" type="button" data-act="close" aria-label="Закрыть">${ICON.close}</button></div>
+<div class="cal-top cal-own" data-k="own"><h3>${fmtLong.format(d)}</h3><input id="cal-h" inputmode="numeric" maxlength="2" autocomplete="off" aria-label="Часы" value="${String(d.getHours()).padStart(2, '0')}"><b>:</b><input id="cal-m" inputmode="numeric" maxlength="2" autocomplete="off" aria-label="Минуты" value="${String(d.getMinutes()).padStart(2, '0')}"></div>
+<div class="cal-top" data-k="nav"><button class="icon-btn" type="button" data-act="cal" data-id="m:-1" aria-label="Предыдущий месяц"${y * 12 + m <= now.getFullYear() * 12 + now.getMonth() ? ' disabled' : ''}>${ICON.prev}</button><b aria-live="polite">${fmtMonth.format(new Date(y, m, 1)).replace(/\s*г\.$/, '')}</b><button class="icon-btn" type="button" data-act="cal" data-id="m:1" aria-label="Следующий месяц">${ICON.next}</button></div>
 <div class="cal-grid cal-days">${['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'].map((x) => `<span>${x}</span>`).join('')}${monthDays(y, m).map(day).join('')}</div>
-<div class="cal-grid cal-time">${hours.map((h) => btn('h:' + h, h, h === d.getHours(), past(h, 59))).join('')}</div>
-<div class="cal-grid cal-time cal-min">${mins.map((x) => btn('i:' + x, String(x).padStart(2, '0'), x === d.getMinutes(), past(d.getHours(), x))).join('')}</div>
-<div class="cal-foot"><button class="btn primary" type="button" data-act="cal" data-id="ok"></button>${has ? '<button class="btn quiet" type="button" data-act="cal" data-id="off">Убрать звонок</button>' : ''}</div>`;
+<div class="cal-grid cal-time" data-k="h">${hours.map((h) => btn('h:' + h, h, h === d.getHours(), past(h, 59))).join('')}</div>
+<div class="cal-grid cal-time cal-min" data-k="m">${mins.map((x) => btn('i:' + x, String(x).padStart(2, '0'), x === d.getMinutes(), past(d.getHours(), x))).join('')}</div>
+<div class="cal-foot"><button class="btn primary" type="button" data-act="cal" data-id="ok">Назначить</button>${has ? '<button class="btn quiet" type="button" data-act="cal" data-id="off">Убрать звонок</button>' : ''}</div>`);
     calDone();
-    const back = keep && $(`[data-id="${keep}"]`, box);
-    if (back) back.focus();
   }
   function calDone(bad) {
     const ok = $('#cal [data-id="ok"]'), late = cal.d < new Date();
@@ -620,11 +691,12 @@
       for (const b of $('#cal').querySelectorAll(`[data-id^="${hours ? 'h' : 'i'}:"]`)) { const on = Number(b.dataset.id.slice(2)) === n; b.classList.toggle('on', on); b.setAttribute('aria-pressed', on); }
       if (hours && (digits.length === 2 || n > 2)) $('#cal-m').focus();
     }
+    $('#cal').lastHtml = '';
     calDone(bad);
   }
   function tapCal(id) {
     const [k, v] = id.split(':'), n = Number(v), d = new Date(cal.d);
-    if (k === 'ok' || k === 'off') { $('#modal').close(); save(cal.id, { next: k === 'ok' ? d.toISOString() : null }); return; }
+    if (k === 'ok' || k === 'off') { shut($('#modal')); save(cal.id, { next: k === 'ok' ? d.toISOString() : null }); return; }
     if (k === 'm') { const x = new Date(cal.y, cal.m + n, 1); cal.y = x.getFullYear(); cal.m = x.getMonth(); }
     if (k === 'd') d.setFullYear(cal.y, cal.m, n);
     if (k === 'h') d.setHours(n);
@@ -633,6 +705,7 @@
     if (d < new Date()) d.setTime(Math.ceil(Date.now() / 9e5) * 9e5);
     cal.d = d;
     drawCal();
+    if (k === 'm') play($('.cal-days'), { opacity: [0, 1], transform: [`translateX(${n * 24}px)`, 'none'] }, 240);
   }
   const sourceRows = () => sources().map((s) => {
     const st = S.sync[s.id] || {};
@@ -702,7 +775,7 @@
   async function showDevices() {
     let html;
     try { html = (await store.devices()).map((d) => deviceRow(d, 'dev-drop')).join(''); } catch (e) { html = `<li><small class="bad">Не загрузилось: ${esc(human(e))}</small></li>`; }
-    if ($('#acc-dev')) $('#acc-dev').innerHTML = html;
+    if ($('#acc-dev')) grow(() => { $('#acc-dev').innerHTML = html; });
   }
   async function openHistory() {
     const v = view(S.open);
@@ -720,24 +793,32 @@
       html = groups.map((g) => item(g.at, g.email || g.device, g.email ? g.device : '', g.lines)).join('');
       if (v.lead.platform !== 'manual') html += item(v.lead.created, PLATFORM[v.lead.platform] || 'Facebook', '', ['Пришла заявка']);
     } catch (e) { html = `<li>Не загрузилось: ${esc(human(e))}</li>`; }
-    if ($('#hist')) $('#hist').innerHTML = html;
+    if ($('#hist')) { grow(() => { $('#hist').innerHTML = html; }); play($('#hist'), { opacity: [0, 1] }, 220); }
   }
   const saveSources = (list) => store.put('meta', 'sources', { list }).catch((e) => toast('Не сохранилось: ' + human(e)));
   let toastTimer;
   // popover: поверх открытых окон, иначе на телефоне сообщение под карточкой
-  function toast(text) { const t = $('#toast'); t.textContent = text; t.hidden = false; if (t.showPopover) { if (t.matches(':popover-open')) t.hidePopover(); t.showPopover(); } clearTimeout(toastTimer); toastTimer = setTimeout(() => { if (t.hidePopover) t.hidePopover(); t.hidden = true; }, 4200); }
+  function toast(text) {
+    const t = $('#toast');
+    clearTimeout(toastTimer);
+    t.classList.remove('out');
+    t.textContent = text;
+    t.hidden = false;
+    if (t.showPopover) { if (t.matches(':popover-open')) t.hidePopover(); t.showPopover(); }
+    toastTimer = setTimeout(() => { t.classList.add('out'); toastTimer = setTimeout(() => { if (t.hidePopover) t.hidePopover(); t.hidden = true; }, 220); }, 4200);
+  }
   async function copy(text) { try { await navigator.clipboard.writeText(text); toast(`Номер ${fmtPhone(text)} скопирован`); } catch { /* номер виден в карточке, его можно выделить */ } }
 
   /* ---------- Действия ---------- */
   const ACT = {
     open: (id) => openLead(id),
-    line: (id) => { S.tab = id; location.hash = id; refresh(); },
+    line: (id, el) => { S.tab = id; location.hash = id; refresh(); el.scrollIntoView({ inline: 'center', block: 'nearest', behavior: still.matches ? 'auto' : 'smooth' }); },
     col: (id) => { S.col = id; refresh(); },
-    close: (id, el) => el.closest('dialog').close(),
+    close: (id, el) => shut(el.closest('dialog')),
     sync: pullNow, new: openNew, settings: openSettings,
     copy: () => {},
     status: (id) => setStatus(S.open, id),
-    ask: () => { asking = S.open; renderDrawer(); $('.d-scroll').scrollTop = 0; },
+    ask: () => { asking = S.open; renderDrawer(); $('.d-scroll').scrollTo({ top: 0, behavior: 'smooth' }); },
     reason: async (id) => { const lead = S.open; asking = null; $('#d-reason').blur(); if (await save(lead, { status: 'lost', lost_reason: id, next: null }, `Минус: ${id}`, true)) toast('Перенёс в минус'); },
     out: async (id) => { const v = view(S.open), o = OUTCOMES[id]; asking = null; if (await save(v.id, o.go(v.status), o.label)) toast(o.label + ', записал'); },
     next: (id) => save(S.open, { next: id === 'off' ? null : (id === '2h' ? inTwoHours() : atDay(+id)).toISOString() }),
@@ -811,7 +892,7 @@
       const now = new Date().toISOString();
       try { await store.put('leads', id, { source: f.source, created: now, name: f.name.trim(), phone: '+' + phoneDigits(f.phone), answer: f.answer.trim(), note: '', platform: 'manual', campaign: '', ad: '', form: '' }); } catch (err) { toast('Не сохранилось: ' + human(err)); return; }
       await save(id, { status: 'work' }, f.note.trim() || 'Заявка записана вручную');
-      $('#modal').close();
+      shut($('#modal'));
       toast('Заявка сохранена');
     }
   });
@@ -819,8 +900,10 @@
   document.addEventListener('focusin', (e) => { if (e.target.id === 'cal-h' || e.target.id === 'cal-m') e.target.select(); });
   document.addEventListener('keydown', (e) => { if ((e.target.id === 'cal-h' || e.target.id === 'cal-m') && e.key === 'Enter') { const ok = $('#cal [data-id="ok"]'); if (!ok.disabled) tapCal('ok'); } });
   document.addEventListener('keydown', (e) => { if (e.target.id === 'd-note' && e.key === 'Enter' && (e.metaKey || e.ctrlKey)) ACT.note(); });
-  $('#drawer').addEventListener('close', () => { S.open = null; drawn = null; asking = null; });
-  for (const id of ['#drawer', '#modal']) $(id).addEventListener('click', (e) => { if (e.target === e.currentTarget) { const r = e.currentTarget.getBoundingClientRect(); if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) e.currentTarget.close(); } });
+  $('#drawer').addEventListener('close', () => { if ($('#drawer').open) return; S.open = null; drawn = null; asking = null; });
+  for (const id of ['#drawer', '#modal']) $(id).addEventListener('click', (e) => { if (e.target === e.currentTarget) { const r = e.currentTarget.getBoundingClientRect(); if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) shut(e.currentTarget); } });
+  for (const id of ['#drawer', '#modal']) $(id).addEventListener('cancel', (e) => { if (e.target === e.currentTarget) { e.preventDefault(); shut(e.currentTarget); } }); // Esc и «Назад» на Android
+  document.addEventListener('touchstart', () => {}, { passive: true }); // без слушателя Safari не показывает :active
 
   const board = $('#board');
   const colAt = (e) => e.target.closest && e.target.closest('.col');
