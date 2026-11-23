@@ -114,36 +114,5 @@ function inTwoHours(from = new Date()) {
   if (d.getDate() !== from.getDate() || d.getHours() >= 19) return atDay(1, from);
   return d.getHours() < 9 ? atDay(0, from) : d;
 }
-// Код для script.google.com: каждые 5 минут переносит заявки из таблиц в базу. Разбор строк тот же, что в приложении.
-// shortcut: каждый раз шлёт все строки таблицы, при нескольких тысячах заявок слать только последние
-function googleCode(cfg, key) {
-  return `// CRM L: каждые 5 минут переносит заявки из таблиц Google в CRM.
-// Ключ ниже секретный, никому его не пересылайте.
-const API = ${JSON.stringify(cfg.url + '/rest/v1/rpc/')};
-const PUBLIC_KEY = ${JSON.stringify(cfg.key)};
-const SECRET_KEY = ${JSON.stringify(key)};
-const FB_COLUMNS = new Set(${JSON.stringify([...FB_COLUMNS])});
-${rowsToLeads.toString()}
-function call(name, body) {
-  const res = UrlFetchApp.fetch(API + name, { method: 'post', contentType: 'application/json', headers: { apikey: PUBLIC_KEY }, payload: JSON.stringify(Object.assign({ p_key: SECRET_KEY }, body)), muteHttpExceptions: true });
-  if (res.getResponseCode() >= 300) throw new Error(res.getContentText().slice(0, 300));
-  return JSON.parse(res.getContentText());
-}
-function sync() {
-  const errors = [];
-  call('intake_sources', {}).forEach(function (s) {
-    try {
-      const rows = SpreadsheetApp.openById(s.sheet).getSheets()[0].getDataRange().getDisplayValues();
-      call('intake', { p_source: s.id, p_leads: rowsToLeads(rows, s.id) });
-    } catch (e) { errors.push(s.name + ': ' + e.message); }
-  });
-  if (errors.length) throw new Error(errors.join('; ')); // о сбоях Google сам напишет на почту
-}
-function start() {
-  ScriptApp.getProjectTriggers().forEach(function (t) { ScriptApp.deleteTrigger(t); });
-  ScriptApp.newTrigger('sync').timeBased().everyMinutes(5).create();
-  sync();
-}
-`;
-}
+function gidOf(link) { const m = String(link).match(/[?#&]gid=(\d+)/); return m ? m[1] : ''; }
 function sheetIdOf(link) { const m = String(link).match(/docs\.google\.com\/spreadsheets\/d\/([\w-]{20,})/); return m ? m[1] : ''; }

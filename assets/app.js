@@ -124,11 +124,15 @@
     const apply = (row) => {
       const key = `${row.col}/${row.id}`, t = Date.parse(row.updated_at) || 0;
       if ((at.get(key) || 0) > t) return;
-      if (row.col === 'leads' && started && !S.leads[row.id] && row.data.platform !== 'manual') toast(`Новая заявка: ${row.data.name || fmtPhone(row.data.phone)}`);
+      if (row.col === 'leads' && started && !S.leads[row.id] && row.data.platform !== 'manual') {
+        // заявки одного чтения — одним сообщением
+        if (!came.length) setTimeout(() => { toast(came.length === 1 ? `Новая заявка: ${came[0].name || fmtPhone(came[0].phone)}` : `Новых заявок: ${came.length}`); came = []; }, 700);
+        came.push(row.data);
+      }
       at.set(key, t);
       S[row.col][row.id] = row.data;
     };
-    let started = false;
+    let started = false, came = [];
     const pull = async () => {
       // это устройство отключили с другого: на экран входа
       const { data: alive, error: e0 } = await sb.rpc('is_team');
@@ -160,7 +164,8 @@
         apply(data);
         refresh();
       },
-      async newKey() { const { data, error } = await sb.rpc('intake_new_key'); if (error) throw new Error(error.message); return data; },
+      // попросить сервер прочитать таблицы сейчас, не дожидаясь минуты
+      async readSheets() { const { data, error } = await sb.functions.invoke('pull', { body: {} }); if (error) throw new Error('сервер не ответил'); return data.results || {}; },
       async devices() { const { data, error } = await sb.rpc('device_list'); if (error) throw new Error(netText(error)); return data; },
       async dropDevice(id) { const { error } = await sb.rpc('device_drop', { p_device: id }); if (error) throw new Error(netText(error)); },
       async logout() { await sb.rpc('device_drop', { p_device: deviceId() }); await sb.auth.signOut({ scope: 'local' }); location.reload(); },
@@ -307,7 +312,7 @@
   }
   async function pullNow() {
     $('#sync span').textContent = 'Обновляю';
-    if (store && store.remote) { await store.pull(); renderSync(); return; }
+    if (store && store.remote) { try { await store.readSheets(); } catch { /* покажет состояние базы */ } await store.pull(); renderSync(); return; }
     await Promise.all(sources().map(async (src) => {
       if (!mcp) { if (!window.claude) await pullLocal(src); return; }
       try { await onPull(src, await mcp.callTool(DRIVE, 'download_file_content', driveArgs(src), { cache: { refresh: true } })); } catch (e) { S.sync[src.id] = { ...S.sync[src.id], err: mcpText(e) }; }
@@ -423,10 +428,11 @@
   }
   function renderSync() {
     if (store && store.remote) {
-      // заявки приносит код в Google каждые 5 минут; если давно не было, это видно сразу
+      // таблицы читает сервер раз в минуту; если не читал дольше 5 минут, это видно сразу
+      const state = S.meta.intake || {};
       for (const s of sources()) {
-        const at = Date.parse((S.meta.intake || {})[s.id]);
-        S.sync[s.id] = !at ? { err: `«${s.name}»: приём ещё не включён` } : Date.now() - at > 20 * 6e4 ? { at, err: `«${s.name}»: заявки не проверялись ${ago(Date.now() - at)}` } : { at };
+        const at = Date.parse(state[s.id]), err = state[`${s.id}_err`];
+        S.sync[s.id] = { ...(at ? { at } : {}), ...(err ? { err: `«${s.name}»: ${err}` } : at && Date.now() - at > 5 * 6e4 ? { err: `«${s.name}»: не читалась ${ago(Date.now() - at)}` } : {}) };
       }
       if (S.sync.link && S.sync.link.err) for (const s of sources()) S.sync[s.id] = { ...S.sync[s.id], err: S.sync.link.err };
     }
@@ -531,9 +537,8 @@
   function openSettings() {
     modal(`<div class="box"><h2>Таблицы с заявками</h2><ul class="src">${sourceRows()}</ul>
 <form data-form="source"><h3>Добавить ещё одну</h3><label class="f"><span>Название вкладки</span><input id="s-name" name="name" required autocomplete="off" placeholder="Например, Погрузчики"></label>
-<label class="f"><span>Ссылка на таблицу Google</span><input id="s-link" name="link" required autocomplete="off" placeholder="https://docs.google.com/spreadsheets/d/…"></label><p class="hint">Подходит любая таблица, куда Facebook складывает заявки. Читается первый лист.</p>
-<div class="foot"><button class="btn quiet" type="button" data-act="close">Закрыть</button><button class="btn primary">Добавить</button></div></form>${store && store.remote ? `<hr class="rule"><h3>Приём заявок из Google</h3><p class="hint">Код живёт в вашем Google и каждые 5 минут переносит заявки из таблиц сюда, даже когда CRM закрыта. Новый код отключает прежний.</p><div id="code-box"></div><div class="foot"><button class="btn" type="button" data-act="key">Создать код</button></div>
-<hr class="rule"><h3>Аккаунт</h3><p>${esc(store.user.email)}</p><ul class="src" id="acc-dev"><li><small>Загружаю устройства</small></li></ul><p class="hint">У аккаунта не больше двух устройств. Браузер и значок на экране «Домой» считаются отдельно.</p>
+<label class="f"><span>Ссылка на таблицу Google</span><input id="s-link" name="link" required autocomplete="off" placeholder="https://docs.google.com/spreadsheets/d/…"></label><p class="hint">Подходит любая таблица, куда Facebook складывает заявки. В ней должен быть открыт доступ «Все, у кого есть ссылка», «Читатель».</p>
+<div class="foot"><button class="btn quiet" type="button" data-act="close">Закрыть</button><button class="btn primary">Добавить</button></div></form>${store && store.remote ? `<hr class="rule"><h3>Аккаунт</h3><p>${esc(store.user.email)}</p><ul class="src" id="acc-dev"><li><small>Загружаю устройства</small></li></ul><p class="hint">У аккаунта не больше двух устройств. Браузер и значок на экране «Домой» считаются отдельно.</p>
 <form data-form="pass"><h3>Сменить пароль</h3><input type="email" autocomplete="username" value="${esc(store.user.email)}" hidden><label class="f"><span>Нынешний пароль</span><input id="p-old" name="old" type="password" autocomplete="current-password" required></label><label class="f"><span>Новый пароль, от 8 знаков</span><input id="p-new" name="new" type="password" autocomplete="new-password" minlength="8" required></label><label class="f"><span>Новый пароль ещё раз</span><input id="p-rep" name="rep" type="password" autocomplete="new-password" required></label><div class="foot"><button class="btn quiet" type="button" data-act="logout">Выйти</button><button class="btn">Сменить пароль</button></div></form>` : ''}</div>`);
     if (store && store.remote) showDevices();
   }
@@ -541,15 +546,6 @@
     let html;
     try { html = (await store.devices()).map((d) => deviceRow(d, 'dev-drop')).join(''); } catch (e) { html = `<li><small class="bad">Не загрузилось: ${esc(human(e))}</small></li>`; }
     if ($('#acc-dev')) $('#acc-dev').innerHTML = html;
-  }
-  async function showKey(el) {
-    if (!el.dataset.sure && Object.keys(S.meta.intake || {}).length) { el.dataset.sure = 1; el.textContent = 'Прежний код отключится. Точно создать?'; return; }
-    try {
-      const code = googleCode(window.CRM_L_CONFIG, await store.newKey());
-      $('#code-box').innerHTML = `<ol class="steps"><li>Скопируйте код и откройте <a href="https://script.google.com/home/projects/create" target="_blank" rel="noopener noreferrer">script.google.com</a> под той почтой, у которой есть доступ к таблицам.</li><li>Сотрите там всё, вставьте код, выберите функцию <b>start</b>, нажмите «Выполнить» и разрешите доступ.</li></ol><textarea class="code" id="code" readonly aria-label="Код для Google"></textarea><div class="foot"><button class="btn primary" type="button" data-act="copycode">Скопировать код</button></div>`;
-      $('#code').value = code;
-      el.hidden = true;
-    } catch (e) { toast('Не получилось: ' + human(e)); }
   }
   const saveSources = (list) => store.put('meta', 'sources', { list }).catch((e) => toast('Не сохранилось: ' + human(e)));
   let toastTimer;
@@ -571,8 +567,6 @@
     out: async (id) => { const v = view(S.open), o = OUTCOMES[id]; asking = null; if (await save(v.id, o.go(v.status), o.label)) toast(o.label + ', записал'); },
     next: (id) => save(S.open, { next: id === 'off' ? null : (id === '2h' ? inTwoHours() : atDay(+id)).toISOString() }),
     note: async () => { const el = $('#d-note'), text = el.value.trim(); if (!text) { el.focus(); return; } if (await save(S.open, {}, text)) { $('#d-note').value = ''; toast('Записал'); } },
-    key: (id, el) => showKey(el),
-    copycode: async () => { try { await navigator.clipboard.writeText($('#code').value); toast('Код скопирован'); } catch { $('#code').select(); } },
     logout: () => store.logout(),
     'dev-drop': async (id, el) => {
       if (!el.dataset.sure) { el.dataset.sure = 1; el.textContent = 'Точно отключить?'; return; }
@@ -617,9 +611,21 @@
     if (e.target.dataset.form === 'source') {
       const sheet = sheetIdOf(f.link);
       if (!sheet) { toast('Это не ссылка на таблицу Google'); return; }
-      if (sources().some((s) => s.sheet === sheet)) { toast('Эта таблица уже подключена'); return; }
-      await saveSources([...sources(), { id: 's' + Date.now(), name: f.name.trim(), icon: 'other', sheet }]);
+      const gid = gidOf(f.link);
+      // ссылка с gid=0 и без него — один и тот же первый лист
+      if (sources().some((s) => s.sheet === sheet && (Number(s.gid) || 0) === (Number(gid) || 0))) { toast('Эта таблица уже подключена'); return; }
+      const id = 's' + Date.now();
+      await saveSources([...sources(), { id, name: f.name.trim(), icon: 'other', sheet, ...(gid ? { gid } : {}) }]);
       openSettings();
+      if (store.remote) {
+        toast('Читаю таблицу');
+        try {
+          const r = (await store.readSheets())[id];
+          await new Promise((ok) => setTimeout(ok, 900)); // после сообщения о новых заявках
+          toast(!r ? 'Таблица подключена, заявки появятся в течение минуты' : r.err ? `«${f.name.trim()}»: ${r.err}` : `Таблица подключена, заявок: ${r.count}`);
+          await store.pull();
+        } catch (err) { toast('Таблица подключена, но ' + human(err)); }
+      }
     } else {
       if (phoneDigits(f.phone).length < 7) { toast('Проверьте номер телефона'); return; }
       const id = 'm:' + Date.now() + Math.random().toString(36).slice(2, 6);

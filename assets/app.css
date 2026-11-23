@@ -299,8 +299,6 @@ dialog::backdrop { background: rgba(14, 19, 25, .45); }
 .gate { position: fixed; inset: 0; z-index: 40; display: grid; place-items: center; padding: 24px max(24px, env(safe-area-inset-right, 0px)) 24px max(24px, env(safe-area-inset-left, 0px)); background: var(--bg); }
 .gate form { width: min(360px, 100%); display: flex; flex-direction: column; gap: 14px; }
 .gate .brand { font-size: 26px; }
-.code { min-height: 130px; font: 400 12px/1.4 ui-monospace, Menlo, monospace; }
-.steps { padding-left: 20px; display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
 .rule { border: 0; border-top: 1px solid var(--line); margin: 4px 0; width: 100%; }
 
 @keyframes card-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
