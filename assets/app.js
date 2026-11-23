@@ -166,6 +166,7 @@
       },
       // попросить сервер прочитать таблицы сейчас, не дожидаясь минуты
       async readSheets() { const { data, error } = await sb.functions.invoke('pull', { body: {} }); if (error) throw new Error('сервер не ответил'); return data.results || {}; },
+      async history(id) { const { data, error } = await sb.from('crm_history').select('at,email,device,field,old,new').eq('lead', id).order('at', { ascending: false }).order('id').limit(300); if (error) throw new Error(netText(error)); return data; },
       async devices() { const { data, error } = await sb.rpc('device_list'); if (error) throw new Error(netText(error)); return data; },
       async dropDevice(id) { const { error } = await sb.rpc('device_drop', { p_device: id }); if (error) throw new Error(netText(error)); },
       async logout() { await sb.rpc('device_drop', { p_device: deviceId() }); await sb.auth.signOut({ scope: 'local' }); location.reload(); },
@@ -232,11 +233,11 @@
       },
     };
   }
-  async function save(id, patch, text) {
+  async function save(id, patch, text, auto) {
     const now = new Date().toISOString();
     const p = { ...patch, updated_at: now };
     if (patch.status) p.status_at = now;
-    if (text) p.log = { ['t' + Date.now() + Math.random().toString(36).slice(2, 5)]: { at: now, text, ...(store.user ? { by: store.user.email } : {}) } };
+    if (text) p.log = { ['t' + Date.now() + Math.random().toString(36).slice(2, 5)]: { at: now, text, ...(store.user ? { by: store.user.email } : {}), ...(auto ? { auto: true } : {}) } };
     try { await store.put('crm', id, p); return true; } catch (e) { toast('Не сохранилось: ' + human(e)); return false; }
   }
 
@@ -516,7 +517,7 @@
   <div class="chips">${[['2h', 'Через 2 часа'], ['1', 'Завтра 10:00'], ['3', 'Через 3 дня'], ['7', 'Через неделю']].map(([k, l]) => `<button type="button" data-act="next" data-id="${k}">${l}</button>`).join('')}${c.next ? '<button type="button" data-act="next" data-id="off">Убрать звонок</button>' : ''}</div></section>
   <section class="sec"><label class="f"><span>О чём говорили</span><textarea id="d-note" placeholder="Что нужно, куда доставка, о чём договорились"></textarea></label><div class="foot"><button class="btn primary" type="button" data-act="note">Записать</button></div>
   ${v.log.length ? `<ul class="log">${v.log.map((x) => `<li><time>${esc([when(x.at), x.by].filter(Boolean).join(', '))}</time>${esc(x.text)}</li>`).join('')}</ul>` : ''}</section>
-  <section class="sec"><h3>Заявка</h3><dl class="d-src">${facts.map(([k, t]) => `<dt>${k}</dt><dd>${esc(t)}</dd>`).join('')}${src ? `<dt>Таблица</dt><dd><a href="https://docs.google.com/spreadsheets/d/${esc(src.sheet)}/edit" target="_blank" rel="noopener noreferrer">открыть в Google</a></dd>` : ''}</dl></section>
+  <section class="sec"><h3>Заявка</h3><dl class="d-src">${facts.map(([k, t]) => `<dt>${k}</dt><dd>${esc(t)}</dd>`).join('')}${src ? `<dt>Таблица</dt><dd><a href="https://docs.google.com/spreadsheets/d/${esc(src.sheet)}/edit" target="_blank" rel="noopener noreferrer">открыть в Google</a></dd>` : ''}</dl>${store && store.remote ? '<div><button class="btn" type="button" data-act="history">История изменений</button></div>' : ''}</section>
 </div>`;
     $('#d-note').value = draft;
     if (keep && $('#' + keep.id)) { const el = $('#' + keep.id); el.value = keep.val; el.focus(); try { el.setSelectionRange(keep.at, keep.at); } catch { /* не текстовое поле */ } }
@@ -530,7 +531,7 @@
     if (!v || v.status === status) return;
     if (status === 'lost') { S.open = id; asking = id; renderDrawer(); $('.d-scroll').scrollTop = 0; return; }
     asking = null;
-    await save(id, { status, ...(status === 'client' ? { next: null } : {}) }, `Статус: ${LABEL[status]}`);
+    await save(id, { status, ...(status === 'client' ? { next: null } : {}) }, `Статус: ${LABEL[status]}`, true);
   }
 
   /* ---------- Окна ---------- */
@@ -564,6 +565,24 @@
     try { html = (await store.devices()).map((d) => deviceRow(d, 'dev-drop')).join(''); } catch (e) { html = `<li><small class="bad">Не загрузилось: ${esc(human(e))}</small></li>`; }
     if ($('#acc-dev')) $('#acc-dev').innerHTML = html;
   }
+  async function openHistory() {
+    const v = view(S.open);
+    if (!v) return;
+    modal(`<div class="box"><h2>История изменений</h2><p>${esc(v.name)}</p><ul class="hist" id="hist"><li>Загружаю</li></ul><div class="foot"><button class="btn primary" type="button" data-act="close">Закрыть</button></div></div>`);
+    let html;
+    try {
+      // правки одного нажатия — одной записью
+      const groups = [];
+      for (const h of await store.history(v.id)) {
+        const last = groups[groups.length - 1];
+        if (last && last.at === h.at && last.email === h.email) last.lines.push(historyText(h, when)); else groups.push({ ...h, lines: [historyText(h, when)] });
+      }
+      const item = (at, who, device, lines) => `<li><p class="hist-meta"><time>${esc(when(at))}</time><b>${esc(who)}</b>${device ? `<span>${esc(device)}</span>` : ''}</p>${lines.map((l) => `<p>${esc(l)}</p>`).join('')}</li>`;
+      html = groups.map((g) => item(g.at, g.email || g.device, g.email ? g.device : '', g.lines)).join('');
+      if (v.lead.platform !== 'manual') html += item(v.lead.created, PLATFORM[v.lead.platform] || 'Facebook', '', ['Пришла заявка']);
+    } catch (e) { html = `<li>Не загрузилось: ${esc(human(e))}</li>`; }
+    if ($('#hist')) $('#hist').innerHTML = html;
+  }
   const saveSources = (list) => store.put('meta', 'sources', { list }).catch((e) => toast('Не сохранилось: ' + human(e)));
   let toastTimer;
   // popover: поверх открытых окон, иначе на телефоне сообщение под карточкой
@@ -580,11 +599,12 @@
     copy: () => {},
     status: (id) => setStatus(S.open, id),
     ask: () => { asking = S.open; renderDrawer(); $('.d-scroll').scrollTop = 0; },
-    reason: async (id) => { const lead = S.open; asking = null; $('#d-reason').blur(); if (await save(lead, { status: 'lost', lost_reason: id, next: null }, `Минус: ${id}`)) toast('Перенёс в минус'); },
+    reason: async (id) => { const lead = S.open; asking = null; $('#d-reason').blur(); if (await save(lead, { status: 'lost', lost_reason: id, next: null }, `Минус: ${id}`, true)) toast('Перенёс в минус'); },
     out: async (id) => { const v = view(S.open), o = OUTCOMES[id]; asking = null; if (await save(v.id, o.go(v.status), o.label)) toast(o.label + ', записал'); },
     next: (id) => save(S.open, { next: id === 'off' ? null : (id === '2h' ? inTwoHours() : atDay(+id)).toISOString() }),
     note: async () => { const el = $('#d-note'), text = el.value.trim(); if (!text) { el.focus(); return; } if (await save(S.open, {}, text)) { $('#d-note').value = ''; toast('Записал'); } },
     logout: () => store.logout(),
+    history: openHistory,
     'dev-drop': async (id, el) => {
       if (!el.dataset.sure) { el.dataset.sure = 1; el.textContent = 'Точно отключить?'; return; }
       try { await store.dropDevice(id); toast('Устройство отключено'); } catch (e) { toast('Не получилось: ' + human(e)); }
