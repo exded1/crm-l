@@ -271,6 +271,8 @@ dialog::backdrop { background: rgba(14, 19, 25, .45); }
 .chips button { min-height: 36px; padding: 0 12px; border: 1px solid var(--line-2); border-radius: 999px; background: var(--surface); color: var(--ink-2); font-size: 14px; font-weight: 500; }
 .chips button.on { background: var(--ink); border-color: var(--ink); color: var(--bg); }
 .lost-box { display: flex; flex-direction: column; gap: 10px; padding: 12px; border-radius: 12px; background: var(--lost-soft); }
+.own { display: flex; gap: 8px; }
+.own input { flex: 1; min-width: 0; }
 .models { display: flex; flex-direction: column; list-style: none; }
 .models li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 1px 10px; padding: 9px 0; border-top: 1px solid var(--line); }
 .models b { font-weight: 600; }

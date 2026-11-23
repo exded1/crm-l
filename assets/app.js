@@ -488,7 +488,7 @@
     box.innerHTML = `<div class="d-head"><input id="d-name" value="${esc(v.name)}" aria-label="Имя клиента" autocomplete="off"><button class="icon-btn" type="button" data-act="close" aria-label="Закрыть">${ICON.close}</button></div>
 <div class="seg" role="group" aria-label="Статус">${STATUSES.map(([k, l]) => `<button type="button" class="s-${k}${v.status === k ? ' on' : ''}" data-act="status" data-id="${k}" aria-pressed="${v.status === k}">${l}</button>`).join('')}</div>
 <div class="d-scroll">
-  ${lostOpen ? `<div class="lost-box"><b>Почему в минус?</b><div class="chips">${REASONS.map((r) => `<button type="button" class="${c.lost_reason === r && v.status === 'lost' ? 'on' : ''}" data-act="reason" data-id="${esc(r)}">${esc(r)}</button>`).join('')}</div></div>` : ''}
+  ${lostOpen ? `<div class="lost-box"><b>Почему в минус?</b><div class="chips">${REASONS.map((r) => `<button type="button" class="${c.lost_reason === r && v.status === 'lost' ? 'on' : ''}" data-act="reason" data-id="${esc(r)}">${esc(r)}</button>`).join('')}</div><form class="own" data-form="reason"><input id="d-reason" name="reason" maxlength="80" autocomplete="off" placeholder="Своя причина" aria-label="Своя причина" value="${esc(v.status === 'lost' && c.lost_reason && !REASONS.includes(c.lost_reason) ? c.lost_reason : '')}"><button class="btn">В минус</button></form></div>` : ''}
   <section class="sec"><p class="phone">${esc(fmtPhone(lead.phone) || 'Телефона нет')}</p><div class="go">${wayLinks(lead.phone, true)}${phoneDigits(lead.phone) ? `<button class="btn quiet" type="button" data-act="copy" data-copy="+${phoneDigits(lead.phone)}">Скопировать номер</button>` : ''}</div>
   ${twins.map((t) => `<p class="warn">Этот номер уже есть: <button class="btn small" type="button" data-act="open" data-id="${esc(t.id)}">${esc(t.name)}, ${esc((sourceOf(t.lead.source) || {}).name || '')}</button></p>`).join('')}</section>
   <section class="sec"><h3>Чем закончился контакт</h3><div class="outs">${Object.entries(OUTCOMES).map(([k, o]) => `<button class="btn" type="button" data-act="out" data-id="${k}">${o.label}</button>`).join('')}<button class="btn" type="button" data-act="ask">Отказ</button></div></section>
@@ -563,7 +563,7 @@
     copy: () => {},
     status: (id) => setStatus(S.open, id),
     ask: () => { asking = S.open; renderDrawer(); $('.d-scroll').scrollTop = 0; },
-    reason: async (id) => { const lead = S.open; asking = null; if (await save(lead, { status: 'lost', lost_reason: id, next: null }, `Минус: ${id}`)) toast('Перенёс в минус'); },
+    reason: async (id) => { const lead = S.open; asking = null; $('#d-reason').blur(); if (await save(lead, { status: 'lost', lost_reason: id, next: null }, `Минус: ${id}`)) toast('Перенёс в минус'); },
     out: async (id) => { const v = view(S.open), o = OUTCOMES[id]; asking = null; if (await save(v.id, o.go(v.status), o.label)) toast(o.label + ', записал'); },
     next: (id) => save(S.open, { next: id === 'off' ? null : (id === '2h' ? inTwoHours() : atDay(+id)).toISOString() }),
     note: async () => { const el = $('#d-note'), text = el.value.trim(); if (!text) { el.focus(); return; } if (await save(S.open, {}, text)) { $('#d-note').value = ''; toast('Записал'); } },
@@ -599,6 +599,7 @@
     e.preventDefault();
     if (e.target.dataset.form === 'login') return;
     const f = Object.fromEntries(new FormData(e.target));
+    if (e.target.dataset.form === 'reason') { if (f.reason.trim()) ACT.reason(f.reason.trim()); else $('#d-reason').focus(); return; }
     if (e.target.dataset.form === 'pass') {
       if (f.new.length < 8) { toast('Новый пароль короче 8 знаков'); return; }
       if (f.new !== f.rep) { toast('Новые пароли не совпадают'); return; }
