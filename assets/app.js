@@ -634,10 +634,11 @@
   }
 
   /* ---------- Окна ---------- */
+  const head = (title) => `<div class="m-head" data-k="head"><h2>${title}</h2><button class="icon-btn" type="button" data-act="close" aria-label="Закрыть">${ICON.close}</button></div>`;
   const modal = (html) => { const m = $('#modal'); grow(() => { m.innerHTML = html; }); raise(m); };
   function openNew() {
     if (!sources().length) { openSettings(); return; }
-    modal(`<form data-form="new"><h2>Новая заявка</h2>
+    modal(`<form data-form="new">${head('Новая заявка')}
 <label class="f"><span>Телефон</span><input id="n-phone" name="phone" type="tel" inputmode="tel" autocomplete="off" required placeholder="+380"></label><div id="n-match"></div>
 <label class="f"><span>Имя или компания</span><input id="n-name" name="name" autocomplete="off"></label>
 <div class="row2"><label class="f"><span>Направление</span><select id="n-src" name="source">${sources().map((s) => `<option value="${esc(s.id)}"${s.id === S.tab ? ' selected' : ''}>${esc(s.name)}</option>`).join('')}</select></label>
@@ -670,7 +671,7 @@
     const plus = (list, x) => [...new Set([...list, x])].sort((a, b) => a - b);
     const hours = plus(Array.from({ length: 14 }, (_, i) => i + 8), d.getHours());
     const mins = plus([0, 15, 30, 45], d.getMinutes());
-    morph(box, `<div class="cal-top"><h2>Следующий звонок</h2><button class="icon-btn" type="button" data-act="close" aria-label="Закрыть">${ICON.close}</button></div>
+    morph(box, `${head('Следующий звонок')}
 <div class="cal-top cal-own" data-k="own"><h3>${fmtLong.format(d)}</h3><input id="cal-h" inputmode="numeric" maxlength="2" autocomplete="off" aria-label="Часы" value="${String(d.getHours()).padStart(2, '0')}"><b>:</b><input id="cal-m" inputmode="numeric" maxlength="2" autocomplete="off" aria-label="Минуты" value="${String(d.getMinutes()).padStart(2, '0')}"></div>
 <div class="cal-top" data-k="nav"><button class="icon-btn" type="button" data-act="cal" data-id="m:-1" aria-label="Предыдущий месяц"${y * 12 + m <= now.getFullYear() * 12 + now.getMonth() ? ' disabled' : ''}>${ICON.prev}</button><b aria-live="polite">${fmtMonth.format(new Date(y, m, 1)).replace(/\s*г\.$/, '')}</b><button class="icon-btn" type="button" data-act="cal" data-id="m:1" aria-label="Следующий месяц">${ICON.next}</button></div>
 <div class="cal-grid cal-days">${['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'].map((x) => `<span>${x}</span>`).join('')}${monthDays(y, m).map(day).join('')}</div>
@@ -715,13 +716,15 @@
     return `<li><div><b>${esc(s.name)}</b><small class="${st.err ? 'bad' : ''}">${esc(st.err || `Заявок: ${n}${st.at ? `, прочитано в ${fmtTime.format(st.at)}` : ''}`)}</small></div><a class="btn small" href="https://docs.google.com/spreadsheets/d/${esc(s.sheet)}/edit" target="_blank" rel="noopener noreferrer">Открыть</a><button class="btn small quiet" type="button" data-act="drop" data-id="${esc(s.id)}">Отключить</button></li>`;
   }).join('');
   function openSettings() {
-    modal(`<div class="box"><h2>Настройки</h2>${store && store.remote ? `<section class="sec" id="push"><h3>Уведомления на это устройство</h3>
+    modal(`<div class="box">${head('Настройки')}${store && store.remote ? `<section class="sec" id="push"><h3>Уведомления на это устройство</h3>
 <label class="check"><input id="push-leads" type="checkbox" disabled><span>Пришла новая заявка</span></label>
-<label class="check"><input id="push-calls" type="checkbox" disabled><span>Пора звонить: наступил «Следующий звонок»</span></label><p class="hint"></p></section><hr class="rule">` : ''}<h3>Таблицы с заявками</h3><ul class="src">${sourceRows()}</ul>
+<label class="check"><input id="push-calls" type="checkbox" disabled><span>Пора звонить: наступил «Следующий звонок»</span></label><p class="hint"></p></section><hr class="rule">` : ''}<h3>Подключённые таблицы</h3><ul class="src">${sourceRows()}</ul>
 <form data-form="source"><h3>Добавить ещё одну</h3><label class="f"><span>Название вкладки</span><input id="s-name" name="name" required autocomplete="off" placeholder="Например, Погрузчики"></label>
 <label class="f"><span>Ссылка на таблицу Google</span><input id="s-link" name="link" required autocomplete="off" placeholder="https://docs.google.com/spreadsheets/d/…"></label><p class="hint">Подходит любая таблица, куда Facebook складывает заявки. В ней должен быть открыт доступ «Все, у кого есть ссылка», «Читатель».</p>
-<div class="foot"><button class="btn quiet" type="button" data-act="close">Закрыть</button><button class="btn primary">Добавить</button></div></form>${store && store.remote ? `<hr class="rule"><h3>Аккаунт</h3><p>${esc(store.user.email)}</p><ul class="src" id="acc-dev"><li><small>Загружаю устройства</small></li></ul><p class="hint">У аккаунта не больше двух устройств. На iPhone браузер и значок на экране «Домой» считаются отдельно.</p>
-<form data-form="pass"><h3>Сменить пароль</h3><input type="email" autocomplete="username" value="${esc(store.user.email)}" hidden><label class="f"><span>Нынешний пароль</span><input id="p-old" name="old" type="password" autocomplete="current-password" required></label><label class="f"><span>Новый пароль, от 8 знаков</span><input id="p-new" name="new" type="password" autocomplete="new-password" minlength="8" required></label><label class="f"><span>Новый пароль ещё раз</span><input id="p-rep" name="rep" type="password" autocomplete="new-password" required></label><div class="foot"><button class="btn quiet" type="button" data-act="logout">Выйти</button><button class="btn">Сменить пароль</button></div></form>` : ''}</div>`);
+<div class="foot"><button class="btn primary">Добавить</button></div></form>${store && store.remote ? `<hr class="rule"><h3>Аккаунт</h3><p>${esc(store.user.email)}</p><ul class="src" id="acc-dev"><li><small>Загружаю устройства</small></li></ul><p class="hint">У аккаунта не больше двух устройств. На iPhone браузер и значок на экране «Домой» считаются отдельно.</p>
+<button class="btn" type="button" data-act="logout">Выйти из аккаунта</button>
+<button class="fold" type="button" data-act="fold" aria-expanded="false" aria-controls="pass-form">Сменить пароль${ICON.next}</button>
+<form data-form="pass" id="pass-form" hidden><input type="email" autocomplete="username" value="${esc(store.user.email)}" hidden><label class="f"><span>Нынешний пароль</span><input id="p-old" name="old" type="password" autocomplete="current-password" required></label><label class="f"><span>Новый пароль, от 8 знаков</span><input id="p-new" name="new" type="password" autocomplete="new-password" minlength="8" required></label><label class="f"><span>Новый пароль ещё раз</span><input id="p-rep" name="rep" type="password" autocomplete="new-password" required></label><div class="foot"><button class="btn primary">Сохранить пароль</button></div></form>` : ''}</div>`);
     if (store && store.remote) { showDevices(); showPush(); }
   }
   // Уведомления на телефон. На iPhone они бывают только у значка на экране «Домой»
@@ -782,7 +785,7 @@
   async function openHistory() {
     const v = view(S.open);
     if (!v) return;
-    modal(`<div class="box"><h2>История изменений</h2><p>${esc(v.name)}</p><ul class="hist" id="hist"><li>Загружаю</li></ul><div class="foot"><button class="btn primary" type="button" data-act="close">Закрыть</button></div></div>`);
+    modal(`<div class="box">${head('История изменений')}<p>${esc(v.name)}</p><ul class="hist" id="hist"><li>Загружаю</li></ul><div class="foot"><button class="btn primary" type="button" data-act="close">Закрыть</button></div></div>`);
     let html;
     try {
       // правки одного нажатия — одной записью
@@ -826,6 +829,16 @@
     next: (id) => save(S.open, { next: id === 'off' ? null : (id === '2h' ? inTwoHours() : atDay(+id)).toISOString() }),
     note: async () => { const el = $('#d-note'), text = el.value.trim(); if (!text) { el.focus(); return; } if (await save(S.open, {}, text)) { $('#d-note').value = ''; toast('Записал'); } },
     logout: () => store.logout(),
+    // свернуть и развернуть
+    fold: (id, el) => {
+      const body = $('#' + el.getAttribute('aria-controls')), open = el.getAttribute('aria-expanded') !== 'true';
+      el.setAttribute('aria-expanded', open);
+      body.getAnimations().forEach((x) => x.cancel());
+      body.hidden = false;
+      const h = `${body.offsetHeight}px`, a = play(body, { height: open ? ['0px', h] : [h, '0px'], opacity: open ? [0, 1] : [1, 0], overflow: ['clip', 'clip'] }, 320);
+      const done = () => { if (open) body.scrollIntoView({ block: 'nearest', behavior: still.matches ? 'auto' : 'smooth' }); else body.hidden = true; };
+      if (a) a.onfinish = done; else done();
+    },
     history: openHistory,
     cal: (id) => (id ? tapCal(id) : openCal()),
     'dev-drop': async (id, el) => {
@@ -866,7 +879,7 @@
       if (f.new !== f.rep) { toast('Новые пароли не совпадают'); return; }
       const btn = $('button:not([type])', e.target);
       btn.disabled = true;
-      try { await store.changePassword(f.old, f.new); e.target.reset(); toast('Пароль сменён. На другом устройстве войдите заново'); } catch (err) { toast('Не сменился: ' + human(err)); }
+      try { await store.changePassword(f.old, f.new); e.target.reset(); ACT.fold('', $('.fold[aria-controls="pass-form"]')); toast('Пароль сменён. На другом устройстве войдите заново'); } catch (err) { toast('Не сменился: ' + human(err)); }
       btn.disabled = false;
       return;
     }

@@ -296,7 +296,7 @@ dialog.closing::backdrop { opacity: 0; }
 .pick.is-empty { color: var(--ink-3); } .pick.is-overdue { color: var(--lost-ink); border-color: var(--lost); }
 .modal .cal { gap: 10px; }
 .cal-top { display: flex; align-items: center; gap: 6px; }
-.cal-top h2, .cal-top b { flex: 1; } .cal-top b { display: block; text-align: center; font-size: 16px; }
+.cal-top b { flex: 1; } .cal-top b { display: block; text-align: center; font-size: 16px; }
 .cal-top b::first-letter { text-transform: uppercase; }
 .cal-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 3px; font-variant-numeric: tabular-nums; }
 .cal-grid span { padding: 2px 0; color: var(--ink-3); font-size: 12.5px; text-align: center; }
@@ -310,7 +310,7 @@ dialog.closing::backdrop { opacity: 0; }
 .cal-min { margin-top: -2px; grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); }
 .cal-grid .on { background: var(--ink); color: var(--bg); }
 .cal-foot { display: grid; gap: 4px; margin-top: 4px; }
-@media (max-height: 740px) { .modal[open]:has(.cal) { padding: 12px 16px; } .modal .cal { gap: 6px; } .cal-grid button { min-height: 34px; } .cal-days { grid-auto-rows: 34px; min-height: calc(22px + 6 * 37px); } }
+@media (max-height: 740px) { .modal[open]:has(.cal) { --py: 12px; --px: 16px; } .modal .cal { gap: 6px; } .cal-grid button { min-height: 34px; } .cal-days { grid-auto-rows: 34px; min-height: calc(22px + 6 * 37px); } }
 .models { display: flex; flex-direction: column; list-style: none; }
 .models li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 1px 10px; padding: 9px 0; border-top: 1px solid var(--line); }
 .models b { font-weight: 600; }
@@ -330,14 +330,21 @@ dialog.closing::backdrop { opacity: 0; }
 .d-src { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 14px; font-size: 13.5px; margin: 0; }
 .d-src dt { color: var(--ink-3); } .d-src dd { margin: 0; overflow-wrap: anywhere; }
 
-.modal[open] { width: min(500px, calc(100vw - 32px)); max-height: calc(100% - 32px); margin: auto; padding: 20px; border-radius: 20px; background: var(--surface); box-shadow: var(--shadow-float); overflow: hidden auto; transition: opacity 240ms ease-out, transform 360ms var(--out); will-change: transform, opacity; }
+.modal[open] { width: min(500px, calc(100vw - 32px)); max-height: calc(100% - 32px); margin: auto; --py: 20px; --px: 20px; padding: var(--py) var(--px); border-radius: 20px; background: var(--surface); box-shadow: var(--shadow-float); overflow: hidden auto; transition: opacity 240ms ease-out, transform 360ms var(--out); will-change: transform, opacity; }
 .modal.closing[open] { opacity: 0; transform: translateY(14px) scale(.97); transition-duration: 200ms; }
 .modal.pre[open] { opacity: .01; transition: none; }
 .modal form, .modal .box { display: flex; flex-direction: column; gap: 13px; }
 .modal h2 { font-size: 19px; font-weight: 700; }
+.m-head { position: sticky; top: calc(-1 * var(--py)); z-index: 2; display: flex; align-items: center; gap: 8px; margin: calc(-1 * var(--py)) calc(-1 * var(--px)) 0; padding: 10px 10px 8px var(--px); border-bottom: 1px solid var(--line); background: var(--surface); } /* крестик на виду, даже когда окно прокручено */
+.m-head h2 { flex: 1; min-width: 0; }
+.m-head .icon-btn { width: 44px; height: 44px; }
 .modal h3 { font-size: 16px; font-weight: 700; }
 .check { display: flex; align-items: center; gap: 11px; min-height: 40px; }
 .check input { flex: none; width: 22px; height: 22px; min-height: 0; margin: 0; padding: 0; accent-color: #16a34a; }
+.fold { display: flex; align-items: center; justify-content: space-between; min-height: 44px; padding: 0 15px; border: 1px solid var(--line-2); border-radius: 10px; background: transparent; font-weight: 600; font-size: 14.5px; text-align: left; }
+.fold svg { width: 18px; height: 18px; color: var(--ink-3); transition: transform 320ms var(--out); }
+.fold[aria-expanded="true"] svg { transform: rotate(90deg); }
+#pass-form { scroll-margin-bottom: 20px; }
 .foot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
 .src { list-style: none; display: flex; flex-direction: column; }
 .src li { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 10px; padding: 10px 0; border-top: 1px solid var(--line); }
