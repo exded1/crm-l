@@ -323,6 +323,9 @@ dialog::backdrop { background: rgba(14, 19, 25, .45); }
 .modal[open] { width: min(500px, calc(100vw - 32px)); max-height: calc(100% - 32px); margin: auto; padding: 20px; border-radius: 20px; background: var(--surface); box-shadow: var(--shadow-float); overflow: hidden auto; animation: sheet-in 160ms cubic-bezier(.2, .8, .2, 1); }
 .modal form, .modal .box { display: flex; flex-direction: column; gap: 13px; }
 .modal h2 { font-size: 19px; font-weight: 700; }
+.modal h3 { font-size: 16px; font-weight: 700; }
+.check { display: flex; align-items: center; gap: 11px; min-height: 40px; }
+.check input { flex: none; width: 22px; height: 22px; min-height: 0; margin: 0; padding: 0; accent-color: #16a34a; }
 .foot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
 .src { list-style: none; display: flex; flex-direction: column; }
 .src li { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 10px; padding: 10px 0; border-top: 1px solid var(--line); }

@@ -180,6 +180,8 @@
       // попросить сервер прочитать таблицы сейчас, не дожидаясь минуты
       async readSheets() { const { data, error } = await sb.functions.invoke('pull', { body: {} }); if (error) throw new Error('сервер не ответил'); return data.results || {}; },
       async history(id) { const { data, error } = await sb.from('crm_history').select('at,email,device,field,old,new').eq('lead', id).order('at', { ascending: false }).order('id').limit(300); if (error) throw new Error(netText(error)); return data; },
+      async pushInfo() { const { data, error } = await sb.rpc('push_info'); if (error) throw new Error(netText(error)); return data; },
+      async pushSet(p_sub, p_leads, p_calls) { const { error } = await sb.rpc('push_set', { p_sub, p_leads, p_calls }); if (error) throw new Error(netText(error)); },
       async devices() { const { data, error } = await sb.rpc('device_list'); if (error) throw new Error(netText(error)); return data; },
       async dropDevice(id) { const { error } = await sb.rpc('device_drop', { p_device: id }); if (error) throw new Error(netText(error)); },
       async logout() { await sb.rpc('device_drop', { p_device: deviceId() }); await sb.auth.signOut({ scope: 'local' }); location.reload(); },
@@ -638,12 +640,63 @@
     return `<li><div><b>${esc(s.name)}</b><small class="${st.err ? 'bad' : ''}">${esc(st.err || `Заявок: ${n}${st.at ? `, прочитано в ${fmtTime.format(st.at)}` : ''}`)}</small></div><a class="btn small" href="https://docs.google.com/spreadsheets/d/${esc(s.sheet)}/edit" target="_blank" rel="noopener noreferrer">Открыть</a><button class="btn small quiet" type="button" data-act="drop" data-id="${esc(s.id)}">Отключить</button></li>`;
   }).join('');
   function openSettings() {
-    modal(`<div class="box"><h2>Таблицы с заявками</h2><ul class="src">${sourceRows()}</ul>
+    modal(`<div class="box"><h2>Настройки</h2>${store && store.remote ? `<section class="sec" id="push"><h3>Уведомления на это устройство</h3>
+<label class="check"><input id="push-leads" type="checkbox" disabled><span>Пришла новая заявка</span></label>
+<label class="check"><input id="push-calls" type="checkbox" disabled><span>Пора звонить: наступил «Следующий звонок»</span></label><p class="hint"></p></section><hr class="rule">` : ''}<h3>Таблицы с заявками</h3><ul class="src">${sourceRows()}</ul>
 <form data-form="source"><h3>Добавить ещё одну</h3><label class="f"><span>Название вкладки</span><input id="s-name" name="name" required autocomplete="off" placeholder="Например, Погрузчики"></label>
 <label class="f"><span>Ссылка на таблицу Google</span><input id="s-link" name="link" required autocomplete="off" placeholder="https://docs.google.com/spreadsheets/d/…"></label><p class="hint">Подходит любая таблица, куда Facebook складывает заявки. В ней должен быть открыт доступ «Все, у кого есть ссылка», «Читатель».</p>
 <div class="foot"><button class="btn quiet" type="button" data-act="close">Закрыть</button><button class="btn primary">Добавить</button></div></form>${store && store.remote ? `<hr class="rule"><h3>Аккаунт</h3><p>${esc(store.user.email)}</p><ul class="src" id="acc-dev"><li><small>Загружаю устройства</small></li></ul><p class="hint">У аккаунта не больше двух устройств. Браузер и значок на экране «Домой» считаются отдельно.</p>
 <form data-form="pass"><h3>Сменить пароль</h3><input type="email" autocomplete="username" value="${esc(store.user.email)}" hidden><label class="f"><span>Нынешний пароль</span><input id="p-old" name="old" type="password" autocomplete="current-password" required></label><label class="f"><span>Новый пароль, от 8 знаков</span><input id="p-new" name="new" type="password" autocomplete="new-password" minlength="8" required></label><label class="f"><span>Новый пароль ещё раз</span><input id="p-rep" name="rep" type="password" autocomplete="new-password" required></label><div class="foot"><button class="btn quiet" type="button" data-act="logout">Выйти</button><button class="btn">Сменить пароль</button></div></form>` : ''}</div>`);
-    if (store && store.remote) showDevices();
+    if (store && store.remote) { showDevices(); showPush(); }
+  }
+  // Уведомления на телефон. На iPhone они бывают только у значка на экране «Домой»
+  function pushBlock() {
+    if (!('PushManager' in window && 'Notification' in window && 'serviceWorker' in navigator)) return /iPhone|iPad/.test(navigator.userAgent) || navigator.maxTouchPoints > 1 ? 'Откройте CRM L со значка на экране «Домой»: в обычном браузере на iPhone уведомлений нет.' : 'Этот браузер не умеет получать уведомления.';
+    return Notification.permission === 'denied' ? 'Уведомления для CRM L запрещены. На iPhone: Настройки, Уведомления, CRM L, «Допуск уведомлений». На компьютере: значок слева от адреса сайта.' : '';
+  }
+  let pushKey = '';
+  async function showPush() {
+    const set = (text, x) => {
+      const box = $('#push');
+      if (!box) return;
+      for (const k of ['leads', 'calls']) { $('#push-' + k).disabled = !x; $('#push-' + k).checked = !!x && x[k] && Notification.permission === 'granted'; }
+      $('.hint', box).textContent = text;
+    };
+    if (pushBlock()) { set(pushBlock()); return; }
+    try {
+      const x = await store.pushInfo();
+      pushKey = x.key;
+      set(x.key ? 'Приходят, даже когда CRM закрыта. Включаются отдельно на каждом телефоне.' : 'Сервер ещё готовит уведомления, откройте настройки через минуту.', x.key && x);
+    } catch (e) { set('Не загрузилось: ' + human(e)); }
+  }
+  async function pushSub(key) {
+    const pm = (await navigator.serviceWorker.ready).pushManager;
+    const sub = (await pm.getSubscription() || await pm.subscribe({ userVisibleOnly: true, applicationServerKey: Uint8Array.from(atob(key.replace(/-/g, '+').replace(/_/g, '/')), (c) => c.charCodeAt(0)) })).toJSON();
+    const bare = (v) => v.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    return { endpoint: sub.endpoint, keys: { p256dh: bare(sub.keys.p256dh), auth: bare(sub.keys.auth) } };
+  }
+  async function savePush() {
+    const leads = $('#push-leads').checked, calls = $('#push-calls').checked, off = !leads && !calls;
+    try {
+      // разрешение спрашиваем первым делом: iPhone показывает вопрос только прямо в нажатии
+      if (!off && await Notification.requestPermission() !== 'granted') { showPush(); return; }
+      for (const k of ['leads', 'calls']) if ($('#push-' + k)) $('#push-' + k).disabled = true;
+      await store.pushSet(off ? null : await pushSub(pushKey), leads, calls);
+      toast(off ? 'Уведомления выключены' : 'Уведомления включены');
+      if (!off) store.readSheets().catch(() => {}); // сервер сразу пришлёт пробное
+    } catch (e) { toast('Не получилось: ' + human(e)); }
+    showPush();
+  }
+  // телефон иногда сам меняет адрес для уведомлений: сверяем при каждом запуске
+  async function syncPush() {
+    if (!store.remote || pushBlock() || Notification.permission !== 'granted') return;
+    const x = await store.pushInfo();
+    if (x.key && (x.leads || x.calls)) await store.pushSet(await pushSub(x.key), x.leads, x.calls);
+  }
+  // нажали на уведомление
+  async function openPushed(id) {
+    if (!S.leads[id] && store.remote) await store.pull();
+    if (S.leads[id]) openLead(id);
   }
   async function showDevices() {
     let html;
@@ -706,6 +759,7 @@
   });
   document.addEventListener('change', (e) => {
     const t = e.target;
+    if (t.id === 'push-leads' || t.id === 'push-calls') savePush();
     if (t.id === 'd-name') save(S.open, { name: t.value.trim() });
     if (t.id === 'd-amount') { const n = t.value.replace(/[^\d.,]/g, '').replace(',', '.'); save(S.open, { amount: n === '' ? null : Number(n) || 0 }); }
   });
@@ -782,6 +836,10 @@
     try { store = await openStore(); } catch (e) { if (e.message !== 'frame') toast('Не открылось: ' + human(e)); return; }
     try { mcp = window.claude ? await window.claude.use('mcp') : null; } catch { mcp = null; }
     refresh();
+    syncPush().catch(() => {});
+    const pushed = new URLSearchParams(location.search).get('lead');
+    if (pushed) { history.replaceState(null, '', location.pathname + location.hash); openPushed(pushed); }
+    if (navigator.serviceWorker) navigator.serviceWorker.addEventListener('message', (e) => { if (e.data && e.data.lead) openPushed(e.data.lead); });
   })();
 })();
 
