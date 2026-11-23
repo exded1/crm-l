@@ -45,7 +45,7 @@
   function deviceLabel() {
     const u = navigator.userAgent;
     const os = /iPhone/.test(u) ? 'iPhone' : /iPad/.test(u) || (/Macintosh/.test(u) && navigator.maxTouchPoints > 1) ? 'iPad' : /Android/.test(u) ? 'Android' : /Mac/.test(u) ? 'Mac' : /Windows/.test(u) ? 'Windows' : 'Компьютер';
-    const app = matchMedia('(display-mode: standalone)').matches ? 'значок CRM L' : /Edg/.test(u) ? 'Edge' : /OPR\//.test(u) ? 'Opera' : /Firefox|FxiOS/.test(u) ? 'Firefox' : /Chrome|CriOS/.test(u) ? 'Chrome' : 'Safari';
+    const app = matchMedia('(display-mode: standalone)').matches ? 'значок CRM L' : /Edg/.test(u) ? 'Edge' : /OPR\//.test(u) ? 'Opera' : /Firefox|FxiOS/.test(u) ? 'Firefox' : /SamsungBrowser/.test(u) ? 'Samsung Internet' : /Chrome|CriOS/.test(u) ? 'Chrome' : 'Safari';
     return `${os}, ${app}`;
   }
   // mode: wait — открываем, login — почта и пароль, retry — только «Повторить»
@@ -645,14 +645,15 @@
 <label class="check"><input id="push-calls" type="checkbox" disabled><span>Пора звонить: наступил «Следующий звонок»</span></label><p class="hint"></p></section><hr class="rule">` : ''}<h3>Таблицы с заявками</h3><ul class="src">${sourceRows()}</ul>
 <form data-form="source"><h3>Добавить ещё одну</h3><label class="f"><span>Название вкладки</span><input id="s-name" name="name" required autocomplete="off" placeholder="Например, Погрузчики"></label>
 <label class="f"><span>Ссылка на таблицу Google</span><input id="s-link" name="link" required autocomplete="off" placeholder="https://docs.google.com/spreadsheets/d/…"></label><p class="hint">Подходит любая таблица, куда Facebook складывает заявки. В ней должен быть открыт доступ «Все, у кого есть ссылка», «Читатель».</p>
-<div class="foot"><button class="btn quiet" type="button" data-act="close">Закрыть</button><button class="btn primary">Добавить</button></div></form>${store && store.remote ? `<hr class="rule"><h3>Аккаунт</h3><p>${esc(store.user.email)}</p><ul class="src" id="acc-dev"><li><small>Загружаю устройства</small></li></ul><p class="hint">У аккаунта не больше двух устройств. Браузер и значок на экране «Домой» считаются отдельно.</p>
+<div class="foot"><button class="btn quiet" type="button" data-act="close">Закрыть</button><button class="btn primary">Добавить</button></div></form>${store && store.remote ? `<hr class="rule"><h3>Аккаунт</h3><p>${esc(store.user.email)}</p><ul class="src" id="acc-dev"><li><small>Загружаю устройства</small></li></ul><p class="hint">У аккаунта не больше двух устройств. На iPhone браузер и значок на экране «Домой» считаются отдельно.</p>
 <form data-form="pass"><h3>Сменить пароль</h3><input type="email" autocomplete="username" value="${esc(store.user.email)}" hidden><label class="f"><span>Нынешний пароль</span><input id="p-old" name="old" type="password" autocomplete="current-password" required></label><label class="f"><span>Новый пароль, от 8 знаков</span><input id="p-new" name="new" type="password" autocomplete="new-password" minlength="8" required></label><label class="f"><span>Новый пароль ещё раз</span><input id="p-rep" name="rep" type="password" autocomplete="new-password" required></label><div class="foot"><button class="btn quiet" type="button" data-act="logout">Выйти</button><button class="btn">Сменить пароль</button></div></form>` : ''}</div>`);
     if (store && store.remote) { showDevices(); showPush(); }
   }
   // Уведомления на телефон. На iPhone они бывают только у значка на экране «Домой»
   function pushBlock() {
-    if (!('PushManager' in window && 'Notification' in window && 'serviceWorker' in navigator)) return /iPhone|iPad/.test(navigator.userAgent) || navigator.maxTouchPoints > 1 ? 'Откройте CRM L со значка на экране «Домой»: в обычном браузере на iPhone уведомлений нет.' : 'Этот браузер не умеет получать уведомления.';
-    return Notification.permission === 'denied' ? 'Уведомления для CRM L запрещены. На iPhone: Настройки, Уведомления, CRM L, «Допуск уведомлений». На компьютере: значок слева от адреса сайта.' : '';
+    const android = /Android/.test(navigator.userAgent);
+    if (!('PushManager' in window && 'Notification' in window && 'serviceWorker' in navigator)) return android ? 'Откройте CRM L в Chrome или Samsung Internet: здесь уведомлений нет.' : /iPhone|iPad/.test(navigator.userAgent) || navigator.maxTouchPoints > 1 ? 'Откройте CRM L со значка на экране «Домой»: в обычном браузере на iPhone уведомлений нет.' : 'Этот браузер не умеет получать уведомления.';
+    return Notification.permission === 'denied' ? android ? 'Уведомления для CRM L запрещены. Откройте сайт в браузере, нажмите значок слева от адреса, «Разрешения», «Уведомления», «Разрешить». И в настройках телефона: Уведомления, тот же браузер или CRM L, включить.' : 'Уведомления для CRM L запрещены. На iPhone: Настройки, Уведомления, CRM L, «Допуск уведомлений». На компьютере: значок слева от адреса сайта.' : '';
   }
   let pushKey = '';
   async function showPush() {
