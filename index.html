@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="ru" translate="no">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://yptebetinetucsczhqmm.supabase.co wss://yptebetinetucsczhqmm.supabase.co; img-src 'self' data:; base-uri 'none'; object-src 'none'; form-action 'self'">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex, nofollow, noarchive">
+<meta name="format-detection" content="telephone=no">
+<meta name="theme-color" content="#edf0f3" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#12171c" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="CRM L">
+<title>CRM L</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="stylesheet" href="assets/app.css">
+<script src="config.js" defer></script>
+<script src="assets/supabase.js" defer></script>
+<script src="assets/logic.js" defer></script>
+<script src="assets/app.js" defer></script>
+</head>
+<body>
+<div class="app">
+  <header class="top">
+    <h1 class="brand">CRM L</h1>
+    <label class="search"><span class="sr">Поиск</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg><input id="q" type="search" placeholder="Имя, телефон, что нужно" autocomplete="off"></label>
+    <button class="btn primary btn-new" data-act="new" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Новая заявка</button>
+    <button class="sync" id="sync" data-act="sync" type="button" aria-label="Обновить таблицы"><i></i><span>Загружаю</span></button>
+    <button class="icon-btn" data-act="settings" type="button" aria-label="Таблицы и настройки"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true"><path d="M4 7h9M19 7h1M4 17h1M11 17h9"/><circle cx="16" cy="7" r="2.6"/><circle cx="8" cy="17" r="2.6"/></svg></button>
+  </header>
+  <nav class="lines" id="lines" aria-label="Направления"></nav>
+  <div class="agenda" id="agenda"></div>
+  <nav class="tabs" id="tabs" aria-label="Статусы"></nav>
+  <main class="board" id="board"></main>
+</div>
+<button class="fab" data-act="new" type="button" aria-label="Новая заявка"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
+<dialog class="drawer" id="drawer" aria-label="Карточка клиента"></dialog>
+<dialog class="modal" id="modal"></dialog>
+<div class="toast" id="toast" role="status" popover="manual" hidden></div>
+<section class="gate" id="gate" hidden>
+  <form data-form="login"><h1 class="brand">CRM L</h1><p class="hint" id="gate-msg" role="alert"></p>
+    <label class="f gate-in"><span>Почта</span><input id="g-mail" name="email" type="email" autocomplete="username" autocapitalize="none" spellcheck="false" required></label>
+    <label class="f gate-in"><span>Пароль</span><input id="g-pass" name="password" type="password" autocomplete="current-password" required></label>
+    <ul class="src" id="g-dev"></ul>
+    <button class="btn primary" id="g-go">Войти</button><button class="btn quiet" id="g-out" type="button" hidden>Войти под другой почтой</button></form>
+</section>
+</body>
+</html>
