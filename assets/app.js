@@ -14,6 +14,9 @@
     tg: svg('<path d="M20.8 4.4 3.6 11.1a.6.6 0 0 0 0 1.1l4.4 1.5 1.6 4.8a.6.6 0 0 0 1 .2l2.2-2.2 4 2.9a.6.6 0 0 0 .9-.3l3.5-13.9a.6.6 0 0 0-.4-.8z"/>'),
     vb: svg('<path d="M6 4h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-5l-4 4v-4H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/><path d="M9 7.5c0 3 2.5 5.5 5.5 5.5M12 7c1.8.2 3 1.4 3.2 3.2"/>'),
     close: svg('<path d="M6 6l12 12M18 6L6 18"/>'),
+    cal: svg('<rect x="4" y="5.5" width="16" height="14.5" rx="2"/><path d="M4 10h16M8.5 3.5v4M15.5 3.5v4"/>'),
+    prev: svg('<path d="M14.5 5.5L8 12l6.5 6.5"/>'),
+    next: svg('<path d="M9.5 5.5L16 12l-6.5 6.5"/>'),
   };
   const PLATFORM = { fb: 'Facebook', ig: 'Instagram', manual: 'Вручную' };
   const COLS = ['leads', 'crm', 'meta'];
@@ -117,13 +120,14 @@
     if (window.top !== window.self) { document.body.textContent = 'CRM L не открывается внутри чужого сайта'; throw new Error('frame'); }
     showGate('wait', 'Открываю');
     while (await freshen(cfg) === 'offline') await askGate(null, 'retry', OFFLINE);
-    const sb = window.supabase.createClient(cfg.url, cfg.key, { auth: { storageKey: AUTH_KEY, persistSession: true, autoRefreshToken: true, detectSessionInUrl: false } });
+    const sb = window.supabase.createClient(cfg.url, cfg.key, { auth: { storageKey: AUTH_KEY, persistSession: true, autoRefreshToken: true, detectSessionInUrl: false },
+      global: { fetch: (u, o = {}) => fetch(u, { ...o, signal: o.signal || AbortSignal.timeout(20000) }) } }); // зависший запрос — тоже «нет связи»
     const user = await signIn(sb);
     const at = new Map();
     // старая копия строки не затирает новую: порядок по часам базы
     const apply = (row) => {
       const key = `${row.col}/${row.id}`, t = Date.parse(row.updated_at) || 0;
-      if ((at.get(key) || 0) > t) return;
+      if ((at.get(key) || 0) > t || (at.get(key) === t && JSON.stringify(S[row.col][row.id]) === JSON.stringify(row.data))) return false;
       if (row.col === 'leads' && started && !S.leads[row.id] && row.data.platform !== 'manual') {
         // заявки одного чтения — одним сообщением
         if (!came.length) setTimeout(() => { toast(came.length === 1 ? `Новая заявка: ${came[0].name || fmtPhone(came[0].phone)}` : `Новых заявок: ${came.length}`); came = []; }, 700);
@@ -131,31 +135,40 @@
       }
       at.set(key, t);
       S[row.col][row.id] = row.data;
+      return true;
     };
-    let started = false, came = [];
+    // новое только «когда прочитаны таблицы» — доску не перерисовываем
+    const show = (rows) => { if (rows.filter(apply).some((r) => r.id !== 'intake')) refresh(); else renderSync(); };
+    let started = false, came = [], busy = null;
+    // первый раз всё, дальше только изменившееся (строки не удаляются); 30 секунд внахлёст, чтобы не потерять запись, которая дошла позже
     const pull = async () => {
+      const since = at.size ? new Date(Math.max(...at.values()) - 30000).toISOString() : '1970-01-01T00:00:00Z';
       // это устройство отключили с другого: на экран входа
       const { data: alive, error: e0 } = await sb.rpc('is_team');
       if (e0) throw new Error(netText(e0));
       if (!alive) { location.reload(); return; }
+      const rows = [];
       for (let from = 0; ; from += 1000) {
-        const { data, error } = await sb.from('crm_docs').select('col,id,data,updated_at').order('col').order('id').range(from, from + 999);
+        const { data, error } = await sb.from('crm_docs').select('col,id,data,updated_at').gt('updated_at', since).order('col').order('id').range(from, from + 999);
         if (error) throw new Error(netText(error));
-        data.forEach(apply);
+        rows.push(...data);
         if (data.length < 1000) break;
       }
       S.sync.link = {};
-      refresh();
+      show(rows);
     };
-    const retryPull = () => pull().catch((e) => { S.sync.link = { err: e.message === 'нет связи' ? 'Нет связи с базой' : e.message }; renderSync(); });
+    const noLink = (text) => { S.sync.link = { err: text }; renderSync(); };
+    const retryPull = () => (busy ||= pull().catch((e) => noLink(e.message === 'нет связи' ? 'Нет связи с базой' : e.message)).finally(() => { busy = null; }));
     for (;;) { try { await pull(); break; } catch { await askGate(sb, 'retry', OFFLINE); } }
     $('#gate').hidden = true;
     started = true;
-    sb.channel('crm-l').on('postgres_changes', { event: '*', schema: 'public', table: 'crm_docs' }, (p) => { if (p.new && p.new.id) { apply(p.new); refresh(); } })
+    sb.channel('crm-l').on('postgres_changes', { event: '*', schema: 'public', table: 'crm_docs' }, (p) => { if (p.new && p.new.id) show([p.new]); })
       .subscribe((st) => { if (st === 'SUBSCRIBED') retryPull(); });
     document.addEventListener('visibilitychange', () => { if (!document.hidden) retryPull(); });
     addEventListener('online', retryPull);
-    setInterval(() => { if (!document.hidden) retryPull(); }, 60000);
+    addEventListener('offline', () => noLink('Нет связи'));
+    // живой канал приносит правки сразу; это подстраховка на случай, если телефон его усыпил
+    setInterval(() => { if (!document.hidden) retryPull(); }, 10000);
     return {
       ready: Promise.resolve(), remote: true, user, pull: retryPull,
       async put(col, id, patch) {
@@ -316,11 +329,17 @@
     const el = $('#sync');
     if (!store || el.getAttribute('aria-busy') === 'true') return;
     el.setAttribute('aria-busy', 'true');
-    let fresh = 0;
-    await Promise.all([pullAll().then((n) => { fresh = n; }), new Promise((ok) => setTimeout(ok, 800))]);
+    let busy = true;
+    const work = pullAll().finally(() => { busy = false; renderSync(); });
+    // крутим целыми оборотами: загрузка кончилась раньше — оборот всё равно доходит до конца. Таймер — для скрытой вкладки, там кадров нет
+    do {
+      if (matchMedia('(prefers-reduced-motion: reduce)').matches) break;
+      const turn = $('.mark svg', el).animate({ transform: ['rotate(0deg)', 'rotate(360deg)'] }, { duration: 900, easing: 'cubic-bezier(.45, .05, .55, .95)' });
+      await Promise.race([turn.finished, new Promise((ok) => setTimeout(ok, 1400))]);
+    } while (busy);
+    const fresh = await work;
     el.setAttribute('aria-busy', 'false');
-    renderSync();
-    const bad = sources().map((s) => S.sync[s.id]).find((x) => x && x.err);
+    const bad = [S.sync.link, ...sources().map((s) => S.sync[s.id])].find((x) => x && x.err);
     if (bad) toast(bad.err); else if (!fresh) toast('Обновлено, новых заявок нет');
   }
   async function pullAll() {
@@ -341,6 +360,8 @@
   /* ---------- Данные для экрана ---------- */
   const fmtTime = new Intl.DateTimeFormat('ru-RU', { hour: '2-digit', minute: '2-digit' });
   const fmtDay = new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'short' });
+  const fmtLong = new Intl.DateTimeFormat('ru-RU', { weekday: 'short', day: 'numeric', month: 'long' });
+  const fmtMonth = new Intl.DateTimeFormat('ru-RU', { month: 'long', year: 'numeric' });
   const dayNo = (d) => Math.floor((new Date(d).setHours(12, 0, 0, 0)) / 864e5);
   function when(iso) {
     const d = new Date(iso), diff = dayNo(d) - dayNo(new Date());
@@ -446,22 +467,23 @@
   }
   function renderSync() {
     if (store && store.remote) {
-      // таблицы читает сервер раз в минуту; если не читал дольше 5 минут, это видно сразу
+      // таблицы читает сервер каждые 20 секунд; если не читал дольше 5 минут, это видно сразу
       const state = S.meta.intake || {};
       for (const s of sources()) {
         const at = Date.parse(state[s.id]), err = state[`${s.id}_err`];
         S.sync[s.id] = { ...(at ? { at } : {}), ...(err ? { err: `«${s.name}»: ${err}` } : at && Date.now() - at > 5 * 6e4 ? { err: `«${s.name}»: не читалась ${ago(Date.now() - at)}` } : {}) };
       }
-      if (S.sync.link && S.sync.link.err) for (const s of sources()) S.sync[s.id] = { ...S.sync[s.id], err: S.sync.link.err };
     }
+    const link = S.sync.link;
     const states = sources().map((s) => S.sync[s.id]).filter(Boolean);
-    const bad = states.find((s) => s.err);
+    const bad = link && link.err ? link : states.find((s) => s.err);
     const at = Math.min(...states.filter((s) => s.at).map((s) => s.at));
     const el = $('#sync');
-    el.className = 'sync' + (bad ? ' err' : states.length ? ' live' : '');
+    el.className = 'sync' + (!link ? '' : link.err ? ' off' : ' on') + (bad && bad !== link ? ' err' : '');
     const text = bad ? bad.err : Number.isFinite(at) ? `Таблицы: ${fmtTime.format(at)}` : sources().length ? 'Читаю таблицы' : 'Таблиц нет';
     $('span', el).textContent = text;
     el.title = text + '. Нажмите, чтобы обновить';
+    el.setAttribute('aria-label', 'Обновить заявки. ' + text);
     if ($('#modal').open && $('#modal .src')) $('#modal .src').innerHTML = sourceRows();
   }
   let queued = false;
@@ -487,7 +509,6 @@
     kp: { label: 'Отправил КП', go: () => ({ status: 'wait', next: atDay(2).toISOString() }) },
     buy: { label: 'Купил', go: () => ({ status: 'client', next: null }) },
   };
-  const localInput = (iso) => { const d = new Date(iso); return new Date(d - d.getTimezoneOffset() * 6e4).toISOString().slice(0, 16); };
   let drawn = null, asking = null;
   function renderDrawer() {
     const box = $('#drawer');
@@ -513,7 +534,7 @@
   <section class="sec"><h3>Что нужно</h3>${need(d)}${d.warn ? `<p class="warn">${esc(d.warn)}</p>` : ''}
   ${d.models.length ? `<ul class="models">${d.models.map((m) => `<li><b>${esc(m.name)}</b><span class="p">${money(m.price)}</span><small>${esc(m.info)}</small><a href="${m.url}" target="_blank" rel="noopener noreferrer">Rozetka</a></li>`).join('')}</ul><p class="hint">Цены и наличие на ${PRICE_DATE}</p>` : ''}
   ${lead.note ? `<p class="quote">${esc(lead.note)}<br><span class="hint">пометка в таблице Google</span></p>` : ''}</section>
-  <section class="sec"><div class="row2"><label class="f"><span>Сумма сделки, ₴</span><input id="d-amount" inputmode="numeric" autocomplete="off" value="${v.amount == null ? '' : v.amount}"></label><label class="f"><span>Следующий звонок</span><input id="d-next" type="datetime-local" value="${c.next ? localInput(c.next) : ''}"></label></div>
+  <section class="sec"><div class="row2"><label class="f"><span>Сумма сделки, ₴</span><input id="d-amount" inputmode="numeric" autocomplete="off" value="${v.amount == null ? '' : v.amount}"></label><div class="f"><span>Следующий звонок</span><button class="pick ${c.next ? dueInfo(c.next).cls : 'is-empty'}" id="d-next" type="button" data-act="cal">${c.next ? `${dueInfo(c.next).cls === 'is-overdue' ? 'Просрочен: ' : ''}${fmtLong.format(new Date(c.next))}, ${fmtTime.format(new Date(c.next))}` : 'Выбрать день и время'}${ICON.cal}</button></div></div>
   <div class="chips">${[['2h', 'Через 2 часа'], ['1', 'Завтра 10:00'], ['3', 'Через 3 дня'], ['7', 'Через неделю']].map(([k, l]) => `<button type="button" data-act="next" data-id="${k}">${l}</button>`).join('')}${c.next ? '<button type="button" data-act="next" data-id="off">Убрать звонок</button>' : ''}</div></section>
   <section class="sec"><label class="f"><span>О чём говорили</span><textarea id="d-note" placeholder="Что нужно, куда доставка, о чём договорились"></textarea></label><div class="foot"><button class="btn primary" type="button" data-act="note">Записать</button></div>
   ${v.log.length ? `<ul class="log">${v.log.map((x) => `<li><time>${esc([when(x.at), x.by].filter(Boolean).join(', '))}</time>${esc(x.text)}</li>`).join('')}</ul>` : ''}</section>
@@ -546,6 +567,70 @@
 <label class="f"><span>О чём говорили</span><textarea id="n-note" name="note"></textarea></label>
 <div class="foot"><button class="btn quiet" type="button" data-act="close">Отмена</button><button class="btn primary">Сохранить</button></div></form>`);
     $('#n-phone').focus();
+  }
+  // Календарь звонка. Свой, потому что системный на iPhone сохранял «сейчас» при открытии, а его «Сбросить» не действовало.
+  // Ничего не пишем, пока не нажали «Назначить»
+  let cal = null;
+  function openCal() {
+    const was = new Date((S.crm[S.open] || {}).next || 0);
+    const d = was > new Date() ? was : atDay(1);
+    d.setSeconds(0, 0);
+    cal = { id: S.open, d, y: d.getFullYear(), m: d.getMonth() };
+    modal('<div class="box cal" id="cal"></div>');
+    drawCal();
+  }
+  function drawCal() {
+    const now = new Date(), { d, y, m } = cal, box = $('#cal'), ae = document.activeElement;
+    const keep = box.contains(ae) && ae.dataset.id;
+    const has = (S.crm[cal.id] || {}).next;
+    const btn = (id, text, on, off, more = '') => `<button type="button" data-act="cal" data-id="${id}" aria-pressed="${on}"${on ? ' class="on"' : ''}${off ? ' disabled' : ''}${more}>${text}</button>`;
+    const day = (n) => {
+      if (!n) return '<i></i>';
+      const x = new Date(y, m, n), diff = dayNo(x) - dayNo(now);
+      return btn('d:' + n, n, dayNo(x) === dayNo(d), diff < 0, ` aria-label="${fmtLong.format(x)}"${diff === 0 ? ' aria-current="date"' : ''}`);
+    };
+    const past = (h, min) => new Date(d).setHours(h, min, 59) < now;
+    const plus = (list, x) => [...new Set([...list, x])].sort((a, b) => a - b);
+    const hours = plus(Array.from({ length: 14 }, (_, i) => i + 8), d.getHours());
+    const mins = plus([0, 15, 30, 45], d.getMinutes());
+    box.innerHTML = `<div class="cal-top"><h2>Следующий звонок</h2><button class="icon-btn" type="button" data-act="close" aria-label="Закрыть">${ICON.close}</button></div>
+<div class="cal-top cal-own"><h3>${fmtLong.format(d)}</h3><input id="cal-h" inputmode="numeric" maxlength="2" autocomplete="off" aria-label="Часы" value="${String(d.getHours()).padStart(2, '0')}"><b>:</b><input id="cal-m" inputmode="numeric" maxlength="2" autocomplete="off" aria-label="Минуты" value="${String(d.getMinutes()).padStart(2, '0')}"></div>
+<div class="cal-top"><button class="icon-btn" type="button" data-act="cal" data-id="m:-1" aria-label="Предыдущий месяц"${y * 12 + m <= now.getFullYear() * 12 + now.getMonth() ? ' disabled' : ''}>${ICON.prev}</button><b aria-live="polite">${fmtMonth.format(new Date(y, m, 1)).replace(/\s*г\.$/, '')}</b><button class="icon-btn" type="button" data-act="cal" data-id="m:1" aria-label="Следующий месяц">${ICON.next}</button></div>
+<div class="cal-grid cal-days">${['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'].map((x) => `<span>${x}</span>`).join('')}${monthDays(y, m).map(day).join('')}</div>
+<div class="cal-grid cal-time">${hours.map((h) => btn('h:' + h, h, h === d.getHours(), past(h, 59))).join('')}</div>
+<div class="cal-grid cal-time cal-min">${mins.map((x) => btn('i:' + x, String(x).padStart(2, '0'), x === d.getMinutes(), past(d.getHours(), x))).join('')}</div>
+<div class="cal-foot"><button class="btn primary" type="button" data-act="cal" data-id="ok"></button>${has ? '<button class="btn quiet" type="button" data-act="cal" data-id="off">Убрать звонок</button>' : ''}</div>`;
+    calDone();
+    const back = keep && $(`[data-id="${keep}"]`, box);
+    if (back) back.focus();
+  }
+  function calDone(bad) {
+    const ok = $('#cal [data-id="ok"]'), late = cal.d < new Date();
+    ok.disabled = bad || late;
+    ok.textContent = bad ? 'Часы 0–23, минуты 0–59' : late ? 'Это время уже прошло' : `Назначить: ${fmtLong.format(cal.d)}, ${fmtTime.format(cal.d)}`;
+  }
+  // время вписывают с клавиатуры: поля не перерисовываем, иначе клавиатура закроется
+  function typeCal(el) {
+    const digits = el.value.replace(/\D/g, ''), n = Number(digits), hours = el.id === 'cal-h', bad = !digits || n > (hours ? 23 : 59);
+    if (el.value !== digits) el.value = digits;
+    if (!bad) {
+      if (hours) cal.d.setHours(n); else cal.d.setMinutes(n);
+      for (const b of $('#cal').querySelectorAll(`[data-id^="${hours ? 'h' : 'i'}:"]`)) { const on = Number(b.dataset.id.slice(2)) === n; b.classList.toggle('on', on); b.setAttribute('aria-pressed', on); }
+      if (hours && (digits.length === 2 || n > 2)) $('#cal-m').focus();
+    }
+    calDone(bad);
+  }
+  function tapCal(id) {
+    const [k, v] = id.split(':'), n = Number(v), d = new Date(cal.d);
+    if (k === 'ok' || k === 'off') { $('#modal').close(); save(cal.id, { next: k === 'ok' ? d.toISOString() : null }); return; }
+    if (k === 'm') { const x = new Date(cal.y, cal.m + n, 1); cal.y = x.getFullYear(); cal.m = x.getMonth(); }
+    if (k === 'd') d.setFullYear(cal.y, cal.m, n);
+    if (k === 'h') d.setHours(n);
+    if (k === 'i') d.setMinutes(n);
+    // выбрали сегодня, а время уже прошло: ближайшие четверть часа
+    if (d < new Date()) d.setTime(Math.ceil(Date.now() / 9e5) * 9e5);
+    cal.d = d;
+    drawCal();
   }
   const sourceRows = () => sources().map((s) => {
     const st = S.sync[s.id] || {};
@@ -605,6 +690,7 @@
     note: async () => { const el = $('#d-note'), text = el.value.trim(); if (!text) { el.focus(); return; } if (await save(S.open, {}, text)) { $('#d-note').value = ''; toast('Записал'); } },
     logout: () => store.logout(),
     history: openHistory,
+    cal: (id) => (id ? tapCal(id) : openCal()),
     'dev-drop': async (id, el) => {
       if (!el.dataset.sure) { el.dataset.sure = 1; el.textContent = 'Точно отключить?'; return; }
       try { await store.dropDevice(id); toast('Устройство отключено'); } catch (e) { toast('Не получилось: ' + human(e)); }
@@ -622,9 +708,9 @@
     const t = e.target;
     if (t.id === 'd-name') save(S.open, { name: t.value.trim() });
     if (t.id === 'd-amount') { const n = t.value.replace(/[^\d.,]/g, '').replace(',', '.'); save(S.open, { amount: n === '' ? null : Number(n) || 0 }); }
-    if (t.id === 'd-next') { const d = new Date(t.value); save(S.open, { next: t.value && !Number.isNaN(d.getTime()) ? d.toISOString() : null }); }
   });
   document.addEventListener('input', (e) => {
+    if (e.target.id === 'cal-h' || e.target.id === 'cal-m') typeCal(e.target);
     if (e.target.id === 'q') { S.q = e.target.value; refresh(); }
     if (e.target.id === 'n-phone') {
       const n = phoneDigits(e.target.value);
@@ -675,6 +761,8 @@
     }
   });
   for (const g of ['gesturestart', 'gesturechange']) document.addEventListener(g, (e) => e.preventDefault(), { passive: false }); // щипок: одного viewport для Safari мало
+  document.addEventListener('focusin', (e) => { if (e.target.id === 'cal-h' || e.target.id === 'cal-m') e.target.select(); });
+  document.addEventListener('keydown', (e) => { if ((e.target.id === 'cal-h' || e.target.id === 'cal-m') && e.key === 'Enter') { const ok = $('#cal [data-id="ok"]'); if (!ok.disabled) tapCal('ok'); } });
   document.addEventListener('keydown', (e) => { if (e.target.id === 'd-note' && e.key === 'Enter' && (e.metaKey || e.ctrlKey)) ACT.note(); });
   $('#drawer').addEventListener('close', () => { S.open = null; drawn = null; asking = null; });
   for (const id of ['#drawer', '#modal']) $(id).addEventListener('click', (e) => { if (e.target === e.currentTarget) { const r = e.currentTarget.getBoundingClientRect(); if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) e.currentTarget.close(); } });

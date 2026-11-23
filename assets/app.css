@@ -146,7 +146,7 @@ html, body { overscroll-behavior: none; }
 html { touch-action: pan-x pan-y; } /* это приложение: без щипка и двойного тапа */
 body { margin: 0; background: var(--bg); color: var(--ink); font: 400 15px/1.45 var(--font); -webkit-font-smoothing: antialiased; -webkit-tap-highlight-color: transparent; }
 button, input, select, textarea { font: inherit; color: inherit; }
-@media (pointer: coarse) { input, select, textarea { font-size: 16px; } } /* мельче 16px iPhone сам приближает страницу */
+@media (pointer: coarse) { input, select, textarea, .pick { font-size: 16px; } } /* мельче 16px iPhone сам приближает страницу */
 button { cursor: pointer; }
 h1, h2, h3, p, ul { margin: 0; padding: 0; }
 svg { display: block; flex: none; }
@@ -165,8 +165,6 @@ svg { display: block; flex: none; }
 @media (hover: hover) { .btn:hover { border-color: var(--ink-3); } .icon-btn:hover, .btn.quiet:hover { background: var(--surface-2); } }
 :where(input, select, textarea) { width: 100%; min-height: 42px; padding: 9px 12px; border: 1px solid var(--line-2); border-radius: 10px; background: var(--surface); color: var(--ink); font-size: 15px; }
 textarea { resize: vertical; min-height: 68px; }
-input[type="datetime-local"] { min-width: 0; -webkit-appearance: none; appearance: none; } /* на iPhone поле даты шире своей колонки */
-::-webkit-date-and-time-value { text-align: left; }
 :where(input, select, textarea):focus { outline: none; border-color: var(--new); box-shadow: 0 0 0 3px color-mix(in srgb, var(--new) 24%, transparent); }
 input::placeholder, textarea::placeholder { color: var(--ink-3); opacity: 1; }
 .f { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
@@ -186,9 +184,11 @@ input::placeholder, textarea::placeholder { color: var(--ink-3); opacity: 1; }
 .mark svg { width: 25px; height: 30px; }
 /* таблица не читается: красная точка на значке */
 .sync.err .mark::after { content: ''; position: absolute; right: -3px; top: -2px; width: 10px; height: 10px; border: 2px solid var(--bg); border-radius: 50%; background: var(--lost); box-sizing: content-box; }
-.sync[aria-busy="true"] .mark svg { animation: spin 800ms linear infinite; }
+/* верх буквы: зелёный — связь есть, красный — нет */
+.leg { fill: currentColor; transition: fill 250ms ease-out; }
+.sync.on .leg { fill: #16a34a; } .sync.off .leg { fill: #e0402f; }
 .sync:active .mark { transform: scale(.92); }
-.sync.err { color: var(--lost-ink); }
+.sync.err, .sync.off { color: var(--lost-ink); }
 
 .lines { display: flex; align-items: center; gap: 8px; padding-bottom: 10px; overflow-x: auto; scrollbar-width: none; }
 .lines::-webkit-scrollbar, .agenda::-webkit-scrollbar, .tabs::-webkit-scrollbar { display: none; }
@@ -281,6 +281,26 @@ dialog::backdrop { background: rgba(14, 19, 25, .45); }
 .lost-box { display: flex; flex-direction: column; gap: 10px; padding: 12px; border-radius: 12px; background: var(--lost-soft); }
 .own { display: flex; gap: 8px; }
 .own input { flex: 1; min-width: 0; }
+.pick { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; min-height: 42px; padding: 9px 12px; border: 1px solid var(--line-2); border-radius: 10px; background: var(--surface); text-align: left; }
+.pick svg { width: 19px; height: 19px; color: var(--ink-3); }
+.pick.is-empty { color: var(--ink-3); } .pick.is-overdue { color: var(--lost-ink); border-color: var(--lost); }
+.modal .cal { gap: 10px; }
+.cal-top { display: flex; align-items: center; gap: 6px; }
+.cal-top h2, .cal-top b { flex: 1; } .cal-top b { display: block; text-align: center; font-size: 16px; }
+.cal-top b::first-letter { text-transform: uppercase; }
+.cal-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 3px; font-variant-numeric: tabular-nums; }
+.cal-grid span { padding: 2px 0; color: var(--ink-3); font-size: 12.5px; text-align: center; }
+.cal-grid button { min-height: 40px; padding: 0; border: 0; border-radius: 10px; background: transparent; font-size: 15px; font-weight: 600; transition: transform 120ms ease-out; }
+.cal-grid button:active { transform: scale(.94); }
+.cal-grid button:disabled, .icon-btn:disabled { color: var(--ink-3); opacity: .45; cursor: default; transform: none; }
+.cal-days { grid-auto-rows: 40px; grid-template-rows: 22px; min-height: calc(22px + 6 * 43px); } /* шесть недель: кнопки ниже не прыгают при смене месяца */
+.cal-days [aria-current] { box-shadow: inset 0 0 0 1.5px var(--line-2); }
+.cal-own h3 { flex: 1; font-size: 16px; } .cal-own h3::first-letter { text-transform: uppercase; } .cal-own input { flex: none; width: 58px; min-height: 40px; padding: 0; text-align: center; font-size: 18px; font-weight: 700; } .cal-own b { flex: none; }
+.cal-time button { background: var(--surface-2); }
+.cal-min { margin-top: -2px; grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); }
+.cal-grid .on { background: var(--ink); color: var(--bg); }
+.cal-foot { display: grid; gap: 4px; margin-top: 4px; }
+@media (max-height: 740px) { .modal[open]:has(.cal) { padding: 12px 16px; } .modal .cal { gap: 6px; } .cal-grid button { min-height: 34px; } .cal-days { grid-auto-rows: 34px; min-height: calc(22px + 6 * 37px); } }
 .models { display: flex; flex-direction: column; list-style: none; }
 .models li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 1px 10px; padding: 9px 0; border-top: 1px solid var(--line); }
 .models b { font-weight: 600; }
@@ -316,7 +336,6 @@ dialog::backdrop { background: rgba(14, 19, 25, .45); }
 .gate .brand { font-size: 26px; }
 .rule { border: 0; border-top: 1px solid var(--line); margin: 4px 0; width: 100%; }
 
-@keyframes spin { to { transform: rotate(360deg); } }
 @keyframes card-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 @keyframes drawer-in { from { transform: translateX(40px); opacity: .5; } to { transform: none; opacity: 1; } }
 @keyframes sheet-in { from { opacity: 0; transform: translateY(8px) scale(.985); } to { opacity: 1; transform: none; } }

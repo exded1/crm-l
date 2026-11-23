@@ -107,6 +107,8 @@ function ago(ms) {
   const m = Math.max(0, Math.floor(ms / 6e4));
   return m < 60 ? `${m} мин` : m < 1440 ? `${Math.floor(m / 60)} ч` : `${Math.floor(m / 1440)} дн`;
 }
+// месяц сеткой с понедельника: пустые места (0), потом числа
+function monthDays(y, m) { return [...Array((new Date(y, m, 1).getDay() + 6) % 7).fill(0), ...Array.from({ length: new Date(y, m + 1, 0).getDate() }, (_, i) => i + 1)]; }
 function atDay(days, from = new Date()) { const d = new Date(from); d.setDate(d.getDate() + days); d.setHours(10, 0, 0, 0); return d; }
 // звоним с 9 до 19: поздно вечером переносим на утро
 function inTwoHours(from = new Date()) {
