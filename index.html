@@ -2,7 +2,7 @@
 <html lang="ru" translate="no">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://yptebetinetucsczhqmm.supabase.co wss://yptebetinetucsczhqmm.supabase.co; img-src 'self' data:; base-uri 'none'; object-src 'none'; form-action 'self'">
 <meta name="referrer" content="no-referrer">
 <meta name="robots" content="noindex, nofollow, noarchive">
@@ -36,8 +36,9 @@
   <main class="board" id="board"></main>
 </div>
 <button class="fab" data-act="new" type="button" aria-label="Новая заявка"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
-<dialog class="drawer" id="drawer" aria-label="Карточка клиента"></dialog>
-<dialog class="modal" id="modal"></dialog>
+<!-- autofocus: без него фокус получает первое поле и на телефоне выезжает клавиатура. Safari берёт его с окна, Chrome с крестика в карточке -->
+<dialog class="drawer" id="drawer" aria-label="Карточка клиента" autofocus></dialog>
+<dialog class="modal" id="modal" autofocus></dialog>
 <div class="toast" id="toast" role="status" popover="manual" hidden></div>
 <section class="gate" id="gate" hidden>
   <form data-form="login"><h1 class="brand">CRM L</h1><p class="hint" id="gate-msg" role="alert"></p>

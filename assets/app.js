@@ -503,7 +503,7 @@
     const twins = Object.keys(S.leads).filter((id) => id !== v.id && phoneDigits(lead.phone) && phoneDigits(S.leads[id].phone) === phoneDigits(lead.phone)).map(view);
     const lostOpen = v.status === 'lost' || asking === v.id;
     const facts = [['Направление', src && src.name], ['Откуда', PLATFORM[lead.platform]], ['Пришла', lead.created && `${fmtDay.format(new Date(lead.created))}, ${fmtTime.format(new Date(lead.created))}`], ['Кампания', lead.campaign], ['Объявление', lead.ad], ['Форма', lead.form], ['Ответ в форме', lead.answer]].filter((f) => f[1]);
-    box.innerHTML = `<div class="d-head"><input id="d-name" value="${esc(v.name)}" aria-label="Имя клиента" autocomplete="off"><button class="icon-btn" type="button" data-act="close" aria-label="Закрыть">${ICON.close}</button></div>
+    box.innerHTML = `<div class="d-head"><input id="d-name" value="${esc(v.name)}" aria-label="Имя клиента" autocomplete="off"><button class="icon-btn" type="button" data-act="close" aria-label="Закрыть" autofocus>${ICON.close}</button></div>
 <div class="seg" role="group" aria-label="Статус">${STATUSES.map(([k, l]) => `<button type="button" class="s-${k}${v.status === k ? ' on' : ''}" data-act="status" data-id="${k}" aria-pressed="${v.status === k}">${l}</button>`).join('')}</div>
 <div class="d-scroll">
   ${lostOpen ? `<div class="lost-box"><b>Почему в минус?</b><div class="chips">${REASONS.map((r) => `<button type="button" class="${c.lost_reason === r && v.status === 'lost' ? 'on' : ''}" data-act="reason" data-id="${esc(r)}">${esc(r)}</button>`).join('')}</div><form class="own" data-form="reason"><input id="d-reason" name="reason" maxlength="80" autocomplete="off" placeholder="Своя причина" aria-label="Своя причина" value="${esc(v.status === 'lost' && c.lost_reason && !REASONS.includes(c.lost_reason) ? c.lost_reason : '')}"><button class="btn">В минус</button></form></div>` : ''}
@@ -674,6 +674,7 @@
       toast('Заявка сохранена');
     }
   });
+  for (const g of ['gesturestart', 'gesturechange']) document.addEventListener(g, (e) => e.preventDefault(), { passive: false }); // щипок: одного viewport для Safari мало
   document.addEventListener('keydown', (e) => { if (e.target.id === 'd-note' && e.key === 'Enter' && (e.metaKey || e.ctrlKey)) ACT.note(); });
   $('#drawer').addEventListener('close', () => { S.open = null; drawn = null; asking = null; });
   for (const id of ['#drawer', '#modal']) $(id).addEventListener('click', (e) => { if (e.target === e.currentTarget) { const r = e.currentTarget.getBoundingClientRect(); if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) e.currentTarget.close(); } });
