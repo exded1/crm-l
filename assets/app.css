@@ -94,7 +94,7 @@
   src: url(../fonts/onest-latin-700-normal.woff2) format('woff2');
   unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;
 }
-:root { color-scheme: light; padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); }
+:root { color-scheme: light; padding-top: env(safe-area-inset-top, 0px); }
 [hidden] { display: none !important; }
 
 /* Раскладка: шапка, вкладки направлений, «Перезвонить», доска из пяти колонок; карточка клиента выезжает справа. */
@@ -219,7 +219,7 @@ input::placeholder, textarea::placeholder { color: var(--ink-3); opacity: 1; }
 .tabs button span { color: var(--ink-3); font-variant-numeric: tabular-nums; }
 .tabs button.on { background: var(--ink); border-color: var(--ink); color: var(--bg); }
 .tabs button.on span { color: inherit; }
-.board { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)) minmax(180px, .62fr); gap: 12px; align-items: start; padding-bottom: 14px; min-height: 0; overflow: hidden; }
+.board { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)) minmax(180px, .62fr); gap: 12px; align-items: start; padding-bottom: max(14px, env(safe-area-inset-bottom, 0px)); min-height: 0; overflow: hidden; }
 .col { display: flex; flex-direction: column; min-width: 0; min-height: 0; max-height: 100%; border-radius: 16px; background: color-mix(in srgb, var(--surface-2) 60%, transparent); }
 .col { transition: background-color 180ms ease-out; }
 .col.over { background: var(--surface-2); }
@@ -359,7 +359,7 @@ dialog.closing::backdrop { opacity: 0; }
   .board { grid-template-columns: minmax(0, 1fr); align-items: stretch; padding-bottom: 0; }
   .col { max-height: none; background: transparent; }
   .col:not(.is-cur), .col-head { display: none; }
-  .col-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); align-content: start; padding: 0 0 96px; }
+  .col-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); align-content: start; padding: 0 0 calc(96px + env(safe-area-inset-bottom, 0px)); }
 }
 @media (max-width: 699px) {
   .top .brand, .btn-new, .sync span { display: none; }

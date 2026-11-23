@@ -390,15 +390,17 @@
     t.innerHTML = html;
     sync(el, t.content);
   }
-  // Окно сначала рисуется за краем, движение начинается через два кадра: иначе Safari теряет начало, пока рисует. Таймер — для скрытой вкладки.
+  // Окно сначала рисуется за краем, движение начинается через четыре кадра: иначе Safari теряет начало, пока рисует. Таймер — для скрытой вкладки.
   // Закрывается после анимации; открыли раньше — она разворачивается обратно
   function raise(d) {
     const turn = d.turn = (d.turn || 0) + 1, go = () => { if (d.turn === turn) d.classList.remove('closing', 'pre'); };
-    if (d.open) { go(); return; }
+    if (d.open || still.matches) { go(); if (!d.open) d.showModal(); return; }
     d.classList.add('closing', 'pre');
     d.showModal();
-    requestAnimationFrame(() => requestAnimationFrame(go));
-    setTimeout(go, 120);
+    let left = 4;
+    const frame = () => { left -= 1; if (left) requestAnimationFrame(frame); else go(); };
+    requestAnimationFrame(frame);
+    setTimeout(go, 160);
   }
   function shut(d) {
     if (!d.open || d.classList.contains('closing')) return;
