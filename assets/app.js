@@ -310,14 +310,31 @@
     });
     renderSync();
   }
+  // нажали на значок: прочитать таблицы сейчас; значок крутится, итог говорит сообщение
   async function pullNow() {
-    $('#sync span').textContent = 'Обновляю';
-    if (store && store.remote) { try { await store.readSheets(); } catch { /* покажет состояние базы */ } await store.pull(); renderSync(); return; }
+    const el = $('#sync');
+    if (!store || el.getAttribute('aria-busy') === 'true') return;
+    el.setAttribute('aria-busy', 'true');
+    let fresh = 0;
+    await Promise.all([pullAll().then((n) => { fresh = n; }), new Promise((ok) => setTimeout(ok, 800))]);
+    el.setAttribute('aria-busy', 'false');
+    renderSync();
+    const bad = sources().map((s) => S.sync[s.id]).find((x) => x && x.err);
+    if (bad) toast(bad.err); else if (!fresh) toast('Обновлено, новых заявок нет');
+  }
+  async function pullAll() {
+    if (store.remote) {
+      let fresh = 0;
+      try { for (const r of Object.values(await store.readSheets())) fresh += r.fresh || 0; } catch { /* причину покажет состояние базы */ }
+      await store.pull();
+      return fresh;
+    }
+    const before = Object.keys(S.leads).length;
     await Promise.all(sources().map(async (src) => {
       if (!mcp) { if (!window.claude) await pullLocal(src); return; }
       try { await onPull(src, await mcp.callTool(DRIVE, 'download_file_content', driveArgs(src), { cache: { refresh: true } })); } catch (e) { S.sync[src.id] = { ...S.sync[src.id], err: mcpText(e) }; }
     }));
-    renderSync();
+    return Object.keys(S.leads).length - before;
   }
 
   /* ---------- Данные для экрана ---------- */

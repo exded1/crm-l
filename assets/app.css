@@ -178,9 +178,12 @@ input::placeholder, textarea::placeholder { color: var(--ink-3); opacity: 1; }
 .search svg { position: absolute; left: 12px; top: 12px; width: 17px; height: 17px; color: var(--ink-3); pointer-events: none; }
 .search input { padding-left: 37px; }
 .sync { display: inline-flex; align-items: center; gap: 8px; min-height: 40px; margin-left: auto; padding: 0 8px; border: 0; border-radius: 10px; background: transparent; color: var(--ink-3); font-size: 13px; text-align: left; }
-.sync i { width: 8px; height: 8px; border-radius: 50%; background: var(--line-2); flex: none; }
-.sync.live i { background: var(--client); }
-.sync.err i { background: var(--lost); }
+.mark { position: relative; flex: none; color: var(--ink); }
+.mark svg { width: 25px; height: 30px; }
+/* таблица не читается: красная точка на значке */
+.sync.err .mark::after { content: ''; position: absolute; right: -3px; top: -2px; width: 10px; height: 10px; border: 2px solid var(--bg); border-radius: 50%; background: var(--lost); box-sizing: content-box; }
+.sync[aria-busy="true"] .mark svg { animation: spin 800ms linear infinite; }
+.sync:active .mark { transform: scale(.92); }
 .sync.err { color: var(--lost-ink); }
 
 .lines { display: flex; align-items: center; gap: 8px; padding-bottom: 10px; overflow-x: auto; scrollbar-width: none; }
@@ -303,6 +306,7 @@ dialog::backdrop { background: rgba(14, 19, 25, .45); }
 .gate .brand { font-size: 26px; }
 .rule { border: 0; border-top: 1px solid var(--line); margin: 4px 0; width: 100%; }
 
+@keyframes spin { to { transform: rotate(360deg); } }
 @keyframes card-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 @keyframes drawer-in { from { transform: translateX(40px); opacity: .5; } to { transform: none; opacity: 1; } }
 @keyframes sheet-in { from { opacity: 0; transform: translateY(8px) scale(.985); } to { opacity: 1; transform: none; } }
@@ -316,7 +320,7 @@ dialog::backdrop { background: rgba(14, 19, 25, .45); }
 }
 @media (max-width: 699px) {
   .top .brand, .btn-new, .sync span { display: none; }
-  .sync { min-width: 40px; justify-content: center; }
+  .sync { min-width: 44px; min-height: 44px; justify-content: center; }
   .line-sum, .line-tab small, .line-tab svg { display: none; }
   .lines { gap: 6px; }
   .line-tab { gap: 6px; min-height: 44px; padding: 0 9px; }
@@ -326,6 +330,7 @@ dialog::backdrop { background: rgba(14, 19, 25, .45); }
   .tabs button { padding: 0 6px; font-size: 12.5px; }
   .fab { display: grid; place-items: center; position: fixed; right: calc(18px + env(safe-area-inset-right, 0px)); bottom: calc(18px + env(safe-area-inset-bottom, 0px)); width: 58px; height: 58px; border: 0; border-radius: 50%; background: var(--ink); color: var(--bg); box-shadow: var(--shadow-float); z-index: 5; }
   .fab svg { width: 26px; height: 26px; }
+  .toast { bottom: calc(88px + env(safe-area-inset-bottom, 0px)); } /* выше кнопки «+» */
   .drawer[open] { width: 100vw; border-radius: 0; }
   :where(input, select, textarea) { font-size: 16px; }
 }
