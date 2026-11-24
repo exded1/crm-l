@@ -117,11 +117,11 @@ function inTwoHours(from = new Date()) {
   return d.getHours() < 9 ? atDay(0, from) : d;
 }
 // Строка истории человеческими словами: что было, что стало
-const FIELD_NAMES = { status: 'Статус', lost_reason: 'Причина минуса', amount: 'Сумма', next: 'Следующий звонок', name: 'Имя', sheet_note: 'Пометка в таблице', phone: 'Телефон', answer: 'Что нужно', source: 'Направление' };
+const FIELD_NAMES = { status: 'Статус', lost_reason: 'Причина минуса', amount: 'Сумма', next: 'Следующий звонок', name: 'Имя', sheet_note: 'Пометка в таблице', phone: 'Телефон', answer: 'Что нужно', source: 'Направление', vb: 'Viber', tg: 'Telegram', wa: 'WhatsApp' };
 function historyText(h, when) {
   if (h.field === 'created') return 'Заявка записана вручную';
   if (h.field === 'note') return `Запись: ${h.new}`;
-  const show = (v) => (v == null || v === '' ? 'пусто' : h.field === 'status' ? (STATUSES.find((s) => s[0] === v) || [0, v])[1] : h.field === 'amount' ? money(Number(v)) : h.field === 'next' ? when(v) : String(v));
+  const show = (v) => (v === true ? 'есть' : v === false ? 'нет' : v == null || v === '' ? ('vb tg wa'.split(' ').includes(h.field) ? 'не отмечен' : 'пусто') : h.field === 'status' ? (STATUSES.find((s) => s[0] === v) || [0, v])[1] : h.field === 'amount' ? money(Number(v)) : h.field === 'next' ? when(v) : String(v));
   return `${FIELD_NAMES[h.field] || h.field}: ${show(h.old)} → ${show(h.new)}`;
 }
 function gidOf(link) { const m = String(link).match(/[?#&]gid=(\d+)/); return m ? m[1] : ''; }

@@ -463,12 +463,12 @@
 
   /* ---------- Экран ---------- */
   const need = (d) => `<p class="need">${d.bars ? `<span class="bars" aria-hidden="true">${[1, 2, 3].map((n) => `<i${n <= d.bars ? ' class="on"' : ''}></i>`).join('')}</span>` : ICON[d.kind] || ICON.other}<span>${esc(d.text)}</span></p>`;
-  function wayLinks(phone, full) {
+  function wayLinks({ phone }, c, full) {
     const n = phoneDigits(phone);
     if (!n) return '';
-    const list = [['call', 'tel:+' + n, 'Позвонить', ICON.phone], ['vb', 'viber://chat?number=%2B' + n, 'Viber', ICON.vb], ['tg', 'https://t.me/+' + n, 'Telegram', ICON.tg], ['wa', 'https://wa.me/' + n, 'WhatsApp', ICON.wa]];
+    const list = [['call', 'tel:+' + n, 'Позвонить', ICON.phone], ['vb', 'viber://chat?number=%2B' + n, 'Viber', ICON.vb], ['tg', 'https://t.me/+' + n, 'Telegram', ICON.tg], ['wa', 'https://wa.me/' + n, 'WhatsApp', ICON.wa]].filter(([k]) => c[k] !== false);
     const attr = (k) => (k === 'tg' || k === 'wa' ? ' target="_blank" rel="noopener noreferrer"' : '');
-    return list.map(([k, href, label, icon]) => `<a class="${full ? 'btn' : `way way-${k}`}" href="${href}"${attr(k)} data-copy="+${n}" aria-label="${label}" title="${label}">${icon}${full ? label : ''}</a>`).join('');
+    return list.map(([k, href, label, icon]) => `<a class="${full ? 'btn' : `way way-${k}`}" data-k="${k}" href="${href}"${attr(k)} data-copy="+${n}" aria-label="${label}" title="${label}">${icon}${full ? label : ''}</a>`).join('');
   }
   function cardHTML(v) {
     const { lead, c, d, status } = v;
@@ -484,7 +484,7 @@
   <div class="card-top"><button class="card-open" type="button" data-act="open" data-id="${esc(v.id)}">${esc(v.name)}</button>${v.amount && status !== 'lost' ? `<span class="card-sum">${money(v.amount)}</span>` : ''}</div>
   ${need(d)}
   ${status === 'lost' ? `<p class="reason">${esc(c.lost_reason || 'Причина не указана')}</p>` : note ? `<p class="card-note">${esc(note)}</p>` : ''}
-  ${status === 'lost' ? '' : `<div class="card-foot">${due ? `<span class="due ${due.cls}">${ICON.phone}${esc(due.label)}</span>` : ''}<span class="ways">${wayLinks(lead.phone)}</span></div>`}
+  ${status === 'lost' ? '' : `<div class="card-foot">${due ? `<span class="due ${due.cls}">${ICON.phone}${esc(due.label)}</span>` : ''}<span class="ways">${wayLinks(lead, c)}</span></div>`}
 </article>`;
   }
   const EMPTY = { new: 'Новых заявок нет', work: 'Перетащите сюда заявку, с которой говорите', wait: 'Ждём ответа или оплаты', client: 'Кто купил', lost: 'Кто отказался и почему' };
@@ -510,7 +510,16 @@
   }
   // где карточки были до обновления: потом они доезжают на новые места, а не перескакивают
   let shown = null;
-  const snap = () => new Map(still.matches ? [] : [...document.querySelectorAll('#board .card')].map((x) => [x.dataset.id, [x.getBoundingClientRect(), x.parentNode]]));
+  const waysIn = (box) => { const at = box.getBoundingClientRect().left; return [...box.querySelectorAll('.ways > *, .go > *')].map((x) => { const r = x.getBoundingClientRect(); return [x, r.left - at, r.top - x.parentNode.getBoundingClientRect().top]; }); };
+  function moveWays(box, was) {
+    const old = new Map(was.map((x) => [x[0], x]));
+    for (const [x, left, top] of waysIn(box)) {
+      const o = old.get(x);
+      if (!o) play(x, { opacity: [0, 1], transform: ['scale(.9)', 'none'] }, 240);
+      else if (Math.abs(o[1] - left) > 1 || Math.abs(o[2] - top) > 1) play(x, { transform: [`translate(${o[1] - left}px, ${o[2] - top}px)`, 'none'] }, 320);
+    }
+  }
+  const snap = () => new Map(still.matches ? [] : [...document.querySelectorAll('#board .card')].map((x) => [x.dataset.id, [x.getBoundingClientRect(), x.parentNode, x, waysIn(x)]]));
   function moveCards(was) {
     const now = { tab: S.tab, col: S.col, q: S.q }, old = shown, at = (k) => STATUSES.findIndex((x) => x[0] === k);
     shown = now;
@@ -521,10 +530,13 @@
       return;
     }
     for (const x of document.querySelectorAll('#board .card')) {
-      const r = x.getBoundingClientRect(), [o, parent] = was.get(x.dataset.id) || [];
+      const r = x.getBoundingClientRect(), [o, parent, card, ways] = was.get(x.dataset.id) || [];
       if (!r.width || r.bottom < 0 || r.top > innerHeight) continue;
       if (!o || !o.width || parent !== x.parentNode) play(x, { opacity: [0, 1], transform: ['scale(.96)', 'none'] }, 280);
-      else if (Math.abs(o.top - r.top) > 1 || Math.abs(o.left - r.left) > 1) play(x, { transform: [`translate(${o.left - r.left}px, ${o.top - r.top}px)`, 'none'] }, 320);
+      else {
+        if (Math.abs(o.top - r.top) > 1 || Math.abs(o.left - r.left) > 1) play(x, { transform: [`translate(${o.left - r.left}px, ${o.top - r.top}px)`, 'none'] }, 320);
+        if (card === x) moveWays(x, ways);
+      }
     }
   }
   function renderBoard() {
@@ -605,7 +617,8 @@
 <div class="seg s-${v.status}" role="group" aria-label="Статус" style="--i:${STATUSES.findIndex((x) => x[0] === v.status)}">${STATUSES.map(([k, l]) => `<button type="button" class="s-${k}${v.status === k ? ' on' : ''}" data-act="status" data-id="${k}" aria-pressed="${v.status === k}">${l}</button>`).join('')}</div>
 <div class="d-scroll">
   ${lostOpen ? `<div class="lost-box" data-k="lost"><b>Почему в минус?</b><div class="chips">${REASONS.map((r) => `<button type="button" class="${c.lost_reason === r && v.status === 'lost' ? 'on' : ''}" data-act="reason" data-id="${esc(r)}">${esc(r)}</button>`).join('')}</div><form class="own" data-form="reason"><input id="d-reason" name="reason" maxlength="80" autocomplete="off" placeholder="Своя причина" aria-label="Своя причина" value="${esc(v.status === 'lost' && c.lost_reason && !REASONS.includes(c.lost_reason) ? c.lost_reason : '')}"><button class="btn">В минус</button></form></div>` : ''}
-  <section class="sec" data-k="phone"><p class="phone">${esc(fmtPhone(lead.phone) || 'Телефона нет')}</p><div class="go">${wayLinks(lead.phone, true)}${phoneDigits(lead.phone) ? `<button class="btn quiet" type="button" data-act="copy" data-copy="+${phoneDigits(lead.phone)}">Скопировать номер</button>` : ''}</div>
+  <section class="sec" data-k="phone"><p class="phone">${esc(fmtPhone(lead.phone) || 'Телефона нет')}</p><div class="go">${wayLinks(lead, c, true)}${phoneDigits(lead.phone) ? `<button class="btn quiet" type="button" data-act="copy" data-copy="+${phoneDigits(lead.phone)}">Скопировать номер</button>` : ''}</div>
+  ${phoneDigits(lead.phone) ? `<p class="hint">Чего нет у клиента?</p><div class="chips" role="group" aria-label="Чего нет у клиента?">${['vb', 'tg', 'wa'].map((k) => `<button type="button" class="${c[k] === false ? 'on' : ''}" data-act="way" data-id="${k}" aria-pressed="${c[k] === false}">${FIELD_NAMES[k]}</button>`).join('')}</div>` : ''}
   ${twins.map((t) => `<p class="warn">Этот номер уже есть: <button class="btn small" type="button" data-act="open" data-id="${esc(t.id)}">${esc(t.name)}, ${esc((sourceOf(t.lead.source) || {}).name || '')}</button></p>`).join('')}</section>
   <section class="sec" data-k="outs"><h3>Чем закончился контакт</h3><div class="outs">${Object.entries(OUTCOMES).map(([k, o]) => `<button class="btn" type="button" data-act="out" data-id="${k}">${o.label}</button>`).join('')}<button class="btn" type="button" data-act="ask">Отказ</button></div></section>
   <section class="sec" data-k="need"><h3>Что нужно</h3>${need(d)}${d.warn ? `<p class="warn">${esc(d.warn)}</p>` : ''}
@@ -617,7 +630,13 @@
   ${v.log.length ? `<ul class="log">${v.log.map((x) => `<li><time>${esc([when(x.at), x.by].filter(Boolean).join(', '))}</time>${esc(x.text)}</li>`).join('')}</ul>` : ''}</section>
   <section class="sec" data-k="src"><h3>Заявка</h3><dl class="d-src">${facts.map(([k, t]) => `<dt>${k}</dt><dd>${esc(t)}</dd>`).join('')}${src ? `<dt>Таблица</dt><dd><a href="https://docs.google.com/spreadsheets/d/${esc(src.sheet)}/edit" target="_blank" rel="noopener noreferrer">открыть в Google</a></dd>` : ''}</dl>${store && store.remote ? '<div><button class="btn" type="button" data-act="history">История изменений</button></div>' : ''}</section>
 </div>`;
-    if (fresh) { box.innerHTML = html; box.lastHtml = html; $('.d-scroll', box).scrollTop = 0; } else morph(box, html);
+    if (fresh) { box.innerHTML = html; box.lastHtml = html; $('.d-scroll', box).scrollTop = 0; } else {
+      const all = $('.d-scroll', box), was = waysIn(all), tall = $('.go', box).offsetHeight;
+      morph(box, html);
+      moveWays(all, was);
+      const go = $('.go', box);
+      if (go.offsetHeight !== tall) play(go, { height: [`${tall}px`, `${go.offsetHeight}px`], overflow: ['clip', 'clip'] }, 320);
+    }
     if (fresh && box.open) play($('.d-scroll', box), { opacity: [0, 1] }, 200); // из карточки в другую карточку
     const lost = $('.lost-box', box);
     if (lost && !hadLost && !fresh) play(lost, { height: ['0px', `${lost.offsetHeight}px`], paddingBlock: ['0px', '12px'], marginBottom: ['-20px', '0px'], opacity: [0, 1] }, 300);
@@ -828,6 +847,7 @@
     out: async (id) => { const v = view(S.open), o = OUTCOMES[id]; asking = null; if (await save(v.id, o.go(v.status), o.label)) toast(o.label + ', записал'); },
     next: (id) => save(S.open, { next: id === 'off' ? null : (id === '2h' ? inTwoHours() : atDay(+id)).toISOString() }),
     note: async () => { const el = $('#d-note'), text = el.value.trim(); if (!text) { el.focus(); return; } if (await save(S.open, {}, text)) { $('#d-note').value = ''; toast('Записал'); } },
+    way: (k) => save(S.open, { [k]: (S.crm[S.open] || {})[k] === false }),
     logout: () => store.logout(),
     // свернуть и развернуть
     fold: (id, el) => {
