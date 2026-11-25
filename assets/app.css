@@ -183,10 +183,10 @@ input::placeholder, textarea::placeholder { color: var(--ink-3); opacity: 1; }
 .search input { padding-left: 37px; }
 .sync { display: inline-flex; align-items: center; gap: 8px; min-height: 40px; margin-left: auto; padding: 0 8px; border: 0; border-radius: 10px; background: transparent; color: var(--ink-3); font-size: 13px; text-align: left; }
 .mark { position: relative; flex: none; color: var(--ink); transition: transform 160ms var(--out); }
-.mark svg { width: 25px; height: 30px; }
+.mark svg { display: block; width: 24px; height: 30px; }
 /* таблица не читается: красная точка на значке */
 .sync.err .mark::after { content: ''; position: absolute; right: -3px; top: -2px; width: 10px; height: 10px; border: 2px solid var(--bg); border-radius: 50%; background: var(--lost); box-sizing: content-box; }
-/* верх буквы: зелёный — связь есть, красный — нет */
+/* полоса под знаком: зелёная — связь есть, красная — нет */
 .leg { fill: currentColor; transition: fill 250ms ease-out; }
 .sync.on .leg { fill: #16a34a; } .sync.off .leg { fill: #e0402f; }
 .sync:active .mark { transform: scale(.92); }
